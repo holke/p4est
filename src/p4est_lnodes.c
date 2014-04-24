@@ -2781,12 +2781,14 @@ p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
   p4est_gloidx_t      owned_count_sum;
   p4est_locidx_t      tempshared_node;
 
+  /* TODO: check return value with SC_CHECK_MPI */
   MPI_Comm_rank (lnodes->mpicomm, &mpirank);
 
   if (lnodes->degree < 1 || lnodes->owned_count < 0
       || lnodes->num_local_nodes < lnodes->owned_count
       || lnodes->global_offset < 0 || lnodes->num_local_elements < 0)
     return 0;
+  /* TODO: don't use pow for integers */
   /* vnodes = (degree+1)^d ? */
   if (lnodes->vnodes != pow ((lnodes->degree + 1), P4EST_DIM))
     return 0;
@@ -2815,6 +2817,7 @@ p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
   /* The sharers array */
   temprank = -1;
   for (i = 0; i < lnodes->sharers->elem_count; i++) {
+    /* TODO: use one of the sc_array_index functions instead */
     r1 =
       (p4est_lnodes_rank_t *) (lnodes->sharers->array +
                                lnodes->sharers->elem_size * i);
@@ -2852,6 +2855,7 @@ p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
             tempshared_node)
           return 0;
       }
+      /* TODO: see above */
       tempshared_node =
         *(p4est_locidx_t *) (r1->shared_nodes.array +
                              r1->shared_nodes.elem_size * (j +
