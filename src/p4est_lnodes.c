@@ -2775,23 +2775,37 @@ p4est_lnodes_buffer_destroy (p4est_lnodes_buffer_t * buffer)
 int
 p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
 {
+  int                 mpirank, mpiret;
+  int                 temprank, degree_power;
+  int                 i, j;
   sc_array_t          array;
-  int                 mpirank, i, j, temprank;
   p4est_lnodes_rank_t *r1;
-  p4est_gloidx_t      owned_count_sum;
+  p4est_locidx_t      kloc;
   p4est_locidx_t      tempshared_node;
+  p4est_gloidx_t      owned_count_sum;
+  int                 temp_hanging_face[P4EST_FACES];
+#ifdef P4_TO_P8
+  int                 temp_hanging_edge[P8EST_EDGES];
+#endif
 
-  /* TODO: check return value with SC_CHECK_MPI */
-  MPI_Comm_rank (lnodes->mpicomm, &mpirank);
 
+  mpiret = MPI_Comm_rank (lnodes->mpicomm, &mpirank);
+  SC_CHECK_MPI (mpiret);
+
+  /* trivial bounds */
   if (lnodes->degree < 1 || lnodes->owned_count < 0
       || lnodes->num_local_nodes < lnodes->owned_count
       || lnodes->global_offset < 0 || lnodes->num_local_elements < 0)
     return 0;
-  /* TODO: don't use pow for integers */
+
   /* vnodes = (degree+1)^d ? */
-  if (lnodes->vnodes != pow ((lnodes->degree + 1), P4EST_DIM))
+  degree_power = 1;
+  for (i = 0; i < P4EST_DIM; i++) {
+    degree_power *= (lnodes->degree + 1);
+  }
+  if (lnodes->vnodes != degree_power)
     return 0;
+
   /* global_offset matches sum of all owned_counts ? */
   owned_count_sum = 0;
   for (i = 0; i < mpirank; i++) {
@@ -2799,13 +2813,13 @@ p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
   }
   if (lnodes->global_offset != owned_count_sum)
     return 0;
-
   if (lnodes->owned_count != lnodes->global_owned_count[mpirank])
     return 0;
+
   /* element_nodes has valid values? */
-  for (i = 0; i < lnodes->vnodes * lnodes->num_local_elements; i++) {
-    if (lnodes->element_nodes[i] < 0
-        || lnodes->element_nodes[i] >= lnodes->num_local_nodes)
+  for (kloc = 0; kloc < lnodes->vnodes * lnodes->num_local_elements; ++kloc) {
+    if (lnodes->element_nodes[kloc] < 0
+        || lnodes->element_nodes[kloc] >= lnodes->num_local_nodes)
       return 0;
   }
 
@@ -2813,57 +2827,75 @@ p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
   sc_array_init_data (&array, lnodes->nonlocal_nodes, sizeof (p4est_gloidx_t),
                       (size_t) lnodes->num_local_nodes - lnodes->owned_count);
   if (!sc_array_is_sorted (&array, p4est_gloidx_compare))
-      return 0;
+    return 0;
+
   /* The sharers array */
   temprank = -1;
-  for (i = 0; i < lnodes->sharers->elem_count; i++) {
-    /* TODO: use one of the sc_array_index functions instead */
-    r1 =
-      (p4est_lnodes_rank_t *) (lnodes->sharers->array +
-                               lnodes->sharers->elem_size * i);
-    /* ordered by rank? */
+  for (i = 0; i < (int) lnodes->sharers->elem_count; i++) {
+    r1 = p4est_lnodes_rank_array_index_int (lnodes->sharers, i);
+   /* ordered by rank? */
     if (r1->rank <= temprank)
       return 0;
     temprank = r1->rank;
+
     /* everything in valid ranges ? */
     if (r1->owned_count < 0 || r1->shared_mine_count < 0)
       return 0;
     if (r1->owned_count) {
-      if (r1->owned_offset < 0 || r1->owned_offset >= lnodes->num_local_nodes)
+      if (r1->owned_offset < 0 ||
+          r1->owned_offset + r1->owned_count > lnodes->num_local_nodes)
         return 0;
     }
     if (r1->shared_mine_count) {
-      if (r1->shared_mine_offset < 0)
+      if (r1->shared_mine_offset < 0 ||
+          r1->shared_mine_offset + r1->shared_mine_count >
+          (int) r1->shared_nodes.elem_count)
         return 0;
     }
     if (r1->rank == mpirank) {
       if (r1->owned_count != lnodes->owned_count)
         return 0;
     }
+
     /* subsection of shared_nodes is sorted ?
      * values in valid range ? */
     tempshared_node = -1;
     for (j = 0; j < r1->shared_mine_count; j++) {
-      /* check the subsection in shared_nodes of nodes that are owned by process r1->rank */
+      /* check the subsection in shared_nodes of nodes
+       * that are owned by process r1->rank */
+      /* TODO the following comparison does not make sense */
       if (r1->shared_mine_offset <= j
           && j < r1->shared_mine_offset + r1->shared_mine_count) {
         if (r1->shared_mine_offset == j)
           tempshared_node = -1;
         if (*(p4est_locidx_t *)
-            (r1->shared_nodes.array +
-             r1->shared_nodes.elem_size * (j + r1->shared_mine_offset)) <
-            tempshared_node)
+            (sc_array_index_int
+             (&r1->shared_nodes,
+              j + r1->shared_mine_offset)) < tempshared_node)
           return 0;
       }
-      /* TODO: see above */
       tempshared_node =
-        *(p4est_locidx_t *) (r1->shared_nodes.array +
-                             r1->shared_nodes.elem_size * (j +
-                                                           r1->
-                                                           shared_mine_offset));
+        *(p4est_locidx_t
+          *) (sc_array_index_int (&r1->shared_nodes,
+                                  j + r1->shared_mine_offset));
+
       if (tempshared_node < 0 || tempshared_node >= lnodes->num_local_nodes)
         return 0;
     }
+  }
+
+  /* basic checks for face codes */
+  for (kloc = 0; kloc < lnodes->num_local_elements; ++kloc) {
+#ifndef P4_TO_P8
+    if ((lnodes->face_code[kloc] & 0xF0) != 0)
+      return 0;
+    p4est_lnodes_decode (lnodes->face_code[kloc], temp_hanging_face);
+#else
+    if ((lnodes->face_code[kloc] & 0xFE00) != 0)
+      return 0;
+    p8est_lnodes_decode (lnodes->face_code[kloc], temp_hanging_face,
+                         temp_hanging_edge);
+#endif
   }
   return 1;
 }
