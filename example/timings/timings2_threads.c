@@ -124,7 +124,6 @@ enum
   TIMINGS_NUM_STATS
 };
 
-
 typedef struct
 {
   timings_config_t    config;
@@ -142,25 +141,23 @@ typedef struct
 }
 mpi_context_t;
 
-#define NUM_THREADS 8
+#define NUM_THREADS 2
 typedef struct
 {
-    int threadid;
-    mpi_context_t *mpi_context;
-    const char *load_name;
-    timings_config_t    config;
-    sc_options_t       *opt;
-    int                 use_ranges, use_ranges_notify, use_balance_verify;
-    int max_ranges;
-    int overlap;
-    int subtree;
-    int borders;
-    int oldschool,generate;
-    int skip_nodes,skip_lnodes;
-    int test_multiple_orders;
-
-}timings_thread_data_t;
-
+  mpi_context_t      *mpi_context;
+  const char         *load_name;
+  timings_config_t    config;
+  sc_options_t       *opt;
+  int                 threadid;
+  int                 use_ranges, use_ranges_notify, use_balance_verify;
+  int                 max_ranges;
+  int                 overlap;
+  int                 subtree;
+  int                 borders;
+  int                 oldschool, generate;
+  int                 skip_nodes, skip_lnodes;
+  int                 test_multiple_orders;
+} timings_thread_data_t;
 
 static int          refine_level = 0;
 static int          level_shift = 0;
@@ -250,388 +247,393 @@ refine_fractal (p4est_t * p4est, p4est_topidx_t which_tree,
     );
 }
 
-void *thread_main(void *Data){
-    timings_thread_data_t *thread_data=(timings_thread_data_t*) Data;
-    int mpiret;
-    int i;
-    unsigned            crc, gcrc;
-    p4est_gloidx_t      count_refined, count_balanced;
-    p4est_gloidx_t      prev_quadrant, next_quadrant;
-    p4est_gloidx_t      global_shipped;
-    p4est_locidx_t     *quadrant_counts;
-    const timings_regression_t *r,*regression;
-    timings_config_t    config=thread_data->config;
-    sc_statinfo_t       stats[TIMINGS_NUM_STATS];
-    sc_flopinfo_t       fi,snapshot;
-    mpi_context_t *mpi=thread_data->mpi_context;
-    sc_options_t       *opt=thread_data->opt;
-    const char *load_name=thread_data->load_name;
-    p4est_connectivity_t *connectivity;
-    p4est_t            *p4est;
-    p4est_nodes_t      *nodes = NULL;
-    p4est_ghost_t      *ghost;
-    p4est_lnodes_t     *lnodes;
-    int use_ranges=thread_data->use_ranges;
-    int use_ranges_notify=thread_data->use_ranges_notify;
-    int use_balance_verify=thread_data->use_balance_verify;
-    int max_ranges=thread_data->max_ranges;
-    int overlap=thread_data->overlap;
-    int subtree=thread_data->subtree;
-    int borders=thread_data->borders;
-    int oldschool=thread_data->oldschool;
-    int generate=thread_data->generate;
-    int skip_lnodes=thread_data->skip_lnodes;
-    int skip_nodes=thread_data->skip_nodes;
-    int test_multiple_orders=thread_data->test_multiple_orders;
+void
+*thread_main (void *Data)
+{
+  timings_thread_data_t *thread_data = (timings_thread_data_t *) Data;
+  int                 mpiret;
+  int                 i;
+  unsigned            crc, gcrc;
+  p4est_gloidx_t      count_refined, count_balanced;
+  p4est_gloidx_t      prev_quadrant, next_quadrant;
+  p4est_gloidx_t      global_shipped;
+  p4est_locidx_t     *quadrant_counts;
+  const timings_regression_t *r, *regression;
+  timings_config_t    config = thread_data->config;
+  sc_statinfo_t       stats[TIMINGS_NUM_STATS];
+  sc_flopinfo_t       fi, snapshot;
+  mpi_context_t      *mpi = thread_data->mpi_context;
+  sc_options_t       *opt = thread_data->opt;
+  const char         *load_name = thread_data->load_name;
+  p4est_connectivity_t *connectivity;
+  p4est_t            *p4est;
+  p4est_nodes_t      *nodes = NULL;
+  p4est_ghost_t      *ghost;
+  p4est_lnodes_t     *lnodes;
+  int                 use_ranges = thread_data->use_ranges;
+  int                 use_ranges_notify = thread_data->use_ranges_notify;
+  int                 use_balance_verify = thread_data->use_balance_verify;
+  int                 max_ranges = thread_data->max_ranges;
+  int                 overlap = thread_data->overlap;
+  int                 subtree = thread_data->subtree;
+  int                 borders = thread_data->borders;
+  int                 oldschool = thread_data->oldschool;
+  int                 generate = thread_data->generate;
+  int                 skip_lnodes = thread_data->skip_lnodes;
+  int                 skip_nodes = thread_data->skip_nodes;
+  int                 test_multiple_orders =
+    thread_data->test_multiple_orders;
 
-    /* start overall timing */
-    mpiret = MPI_Barrier (mpi->mpicomm);
-    SC_CHECK_MPI (mpiret);
-    sc_flops_start (&fi);
+  /* start overall timing */
+  mpiret = MPI_Barrier (mpi->mpicomm);
+  SC_CHECK_MPI (mpiret);
+  sc_flops_start (&fi);
 
-    printf("[HOLKE] process %i thread %i starting work\n",mpi->mpirank,thread_data->threadid);
+  printf ("[HOLKE] process %i thread %i starting work\n", mpi->mpirank,
+          thread_data->threadid);
 
-    /* create connectivity and forest structures */
-    regression = NULL;
-    if (load_name == NULL) {
-  #ifndef P4_TO_P8
-      if (config == P4EST_CONFIG_PERIODIC) {
-        connectivity = p4est_connectivity_new_periodic ();
-      }
-      else if (config == P4EST_CONFIG_THREE) {
-        connectivity = p4est_connectivity_new_corner ();
-      }
-      else if (config == P4EST_CONFIG_MOEBIUS) {
-        connectivity = p4est_connectivity_new_moebius ();
-      }
-      else if (config == P4EST_CONFIG_STAR) {
-        connectivity = p4est_connectivity_new_star ();
-      }
-      else {
-        connectivity = p4est_connectivity_new_unitsquare ();
-      }
-  #else
-      if (config == P4EST_CONFIG_PERIODIC) {
-        connectivity = p8est_connectivity_new_periodic ();
-      }
-      else if (config == P4EST_CONFIG_ROTWRAP) {
-        connectivity = p8est_connectivity_new_rotwrap ();
-      }
-      else if (config == P4EST_CONFIG_TWOCUBES) {
-        connectivity = p8est_connectivity_new_twocubes ();
-      }
-      else if (config == P4EST_CONFIG_ROTCUBES) {
-        connectivity = p8est_connectivity_new_rotcubes ();
-      }
-      else if (config == P4EST_CONFIG_SHELL) {
-        connectivity = p8est_connectivity_new_shell ();
-      }
-      else {
-        connectivity = p8est_connectivity_new_unitcube ();
-      }
-  #endif
-
-      /* create new p4est from scratch */
-      if (oldschool) {
-        regression = regression_oldschool;
-        p4est = p4est_new_ext (mpi->mpicomm, connectivity,
-                               15, 0, 0, 0, NULL, NULL);
-      }
-      else {
-        regression = regression_latest;
-        p4est = p4est_new_ext (mpi->mpicomm, connectivity,
-                               0, refine_level - level_shift, 1, 0, NULL, NULL);
-      }
-
-      /* print all available regression tests */
-      if (generate) {
-        const char         *config_name = NULL;
-
-        P4EST_GLOBAL_PRODUCTION ("Checksum regression tests available:\n");
-        for (r = regression; r->config != P4EST_CONFIG_NULL; ++r) {
-          switch (r->config) {
-          case P4EST_CONFIG_PERIODIC:
-            config_name = "periodic";
-            break;
-  #ifndef P4_TO_P8
-          case P4EST_CONFIG_THREE:
-            config_name = "three";
-            break;
-          case P4EST_CONFIG_MOEBIUS:
-            config_name = "moebius";
-            break;
-          case P4EST_CONFIG_STAR:
-            config_name = "star";
-            break;
-  #else
-          case P4EST_CONFIG_ROTWRAP:
-            config_name = "rotwrap";
-            break;
-          case P4EST_CONFIG_TWOCUBES:
-            config_name = "twocubes";
-            break;
-          case P4EST_CONFIG_ROTCUBES:
-            config_name = "rotcubes";
-            break;
-          case P4EST_CONFIG_SHELL:
-            config_name = "shell";
-            break;
-  #endif
-          default:
-            config_name = "unit";
-            break;
-          }
-          P4EST_GLOBAL_PRODUCTIONF ("mpirun -np %3d %s%s -c %10s -l %2d\n",
-                                    r->mpisize, opt->program_path,
-                                    oldschool ? " --oldschool" : "",
-                                    config_name, r->level);
-        }
-      }
+  /* create connectivity and forest structures */
+  regression = NULL;
+  if (load_name == NULL) {
+#ifndef P4_TO_P8
+    if (config == P4EST_CONFIG_PERIODIC) {
+      connectivity = p4est_connectivity_new_periodic ();
+    }
+    else if (config == P4EST_CONFIG_THREE) {
+      connectivity = p4est_connectivity_new_corner ();
+    }
+    else if (config == P4EST_CONFIG_MOEBIUS) {
+      connectivity = p4est_connectivity_new_moebius ();
+    }
+    else if (config == P4EST_CONFIG_STAR) {
+      connectivity = p4est_connectivity_new_star ();
     }
     else {
-      p4est = p4est_load (load_name, mpi->mpicomm, 0, 0, NULL, &connectivity);
+      connectivity = p4est_connectivity_new_unitsquare ();
     }
-
-    p4est->inspect = P4EST_ALLOC_ZERO (p4est_inspect_t, 1);
-    p4est->inspect->use_balance_ranges = use_ranges;
-    p4est->inspect->use_balance_ranges_notify = use_ranges_notify;
-    p4est->inspect->use_balance_verify = use_balance_verify;
-    p4est->inspect->balance_max_ranges = max_ranges;
-    P4EST_GLOBAL_STATISTICSF
-      ("Balance: new overlap %d new subtree %d borders %d\n", overlap,
-       (overlap && subtree), (overlap && borders));
-    quadrant_counts = P4EST_ALLOC (p4est_locidx_t, p4est->mpisize);
-
-    /* time refine */
-    sc_flops_snap (&fi, &snapshot);
-    p4est_refine (p4est, 1, refine_fractal, NULL);
-    sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[TIMINGS_REFINE], snapshot.iwtime, "Refine");
-  #ifdef P4EST_TIMINGS_VTK
-    p4est_vtk_write_file (p4est, "timings_refined");
-  #endif
-    count_refined = p4est->global_num_quadrants;
-
-    /* time balance */
-    sc_flops_snap (&fi, &snapshot);
-    p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
-    sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[TIMINGS_BALANCE], snapshot.iwtime, "Balance");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_A],
-                   p4est->inspect->balance_A, "Balance A time");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM],
-                   p4est->inspect->balance_comm, "Balance comm time");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_B],
-                   p4est->inspect->balance_B, "Balance B time");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_A_COUNT_IN],
-                   (double) p4est->inspect->balance_A_count_in,
-                   "Balance A count inlist");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_A_COUNT_OUT],
-                   (double) p4est->inspect->balance_A_count_out,
-                   "Balance A count outlist");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM_SENT],
-                   (double) p4est->inspect->balance_comm_sent,
-                   "Balance sent second round");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM_NZPEERS],
-                   (double) p4est->inspect->balance_comm_nzpeers,
-                   "Balance nonzero peers second round");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_B_COUNT_IN],
-                   (double) p4est->inspect->balance_B_count_in,
-                   "Balance B count inlist");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_B_COUNT_OUT],
-                   (double) p4est->inspect->balance_B_count_out,
-                   "Balance B count outlist");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_RANGES],
-                   p4est->inspect->balance_ranges, "Balance time for ranges");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_NOTIFY],
-                   p4est->inspect->balance_notify, "Balance time for notify");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_NOTIFY_ALLGATHER],
-                   p4est->inspect->balance_notify_allgather,
-                   "Balance time for notify_allgather");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_A_ZERO_RECEIVES],
-                   p4est->inspect->balance_zero_receives[0],
-                   "Balance A zero receives");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_A_ZERO_SENDS],
-                   p4est->inspect->balance_zero_sends[0],
-                   "Balance A zero sends");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_B_ZERO_RECEIVES],
-                   p4est->inspect->balance_zero_receives[1],
-                   "Balance B zero receives");
-    sc_stats_set1 (&stats[TIMINGS_BALANCE_B_ZERO_SENDS],
-                   p4est->inspect->balance_zero_sends[1],
-                   "Balance B zero sends");
-  #ifdef P4EST_TIMINGS_VTK
-    p4est_vtk_write_file (p4est, "timings_balanced");
-  #endif
-    count_balanced = p4est->global_num_quadrants;
-    crc = p4est_checksum (p4est);
-
-    /* time rebalance - is a noop on the tree */
-    sc_flops_snap (&fi, &snapshot);
-    p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
-    sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE], snapshot.iwtime, "Rebalance");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_A],
-                   p4est->inspect->balance_A, "Rebalance A time");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM],
-                   p4est->inspect->balance_comm, "Rebalance comm time");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_B],
-                   p4est->inspect->balance_B, "Rebalance B time");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_A_COUNT_IN],
-                   (double) p4est->inspect->balance_A_count_in,
-                   "Rebalance A count inlist");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_A_COUNT_OUT],
-                   (double) p4est->inspect->balance_A_count_out,
-                   "Rebalance A count outlist");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM_SENT],
-                   (double) p4est->inspect->balance_comm_sent,
-                   "Rebalance sent second round");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM_NZPEERS],
-                   (double) p4est->inspect->balance_comm_nzpeers,
-                   "Rebalance nonzero peers second round");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_B_COUNT_IN],
-                   (double) p4est->inspect->balance_B_count_in,
-                   "Rebalance B count inlist");
-    sc_stats_set1 (&stats[TIMINGS_REBALANCE_B_COUNT_OUT],
-                   (double) p4est->inspect->balance_B_count_out,
-                   "Rebalance B count outlist");
-    P4EST_ASSERT (count_balanced == p4est->global_num_quadrants);
-    P4EST_ASSERT (crc == p4est_checksum (p4est));
-
-    /* time a uniform partition */
-    sc_flops_snap (&fi, &snapshot);
-    p4est_partition (p4est, NULL);
-    sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[TIMINGS_PARTITION], snapshot.iwtime, "Partition");
-  #ifdef P4EST_TIMINGS_VTK
-    p4est_vtk_write_file (p4est, "timings_partitioned");
-  #endif
-    P4EST_ASSERT (crc == p4est_checksum (p4est));
-
-    /* time building the ghost layer */
-    sc_flops_snap (&fi, &snapshot);
-    ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
-    sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[TIMINGS_GHOSTS], snapshot.iwtime, "Ghost layer");
-    gcrc = p4est_ghost_checksum (p4est, ghost);
-
-    /* time the node numbering */
-    if (!skip_nodes) {
-      sc_flops_snap (&fi, &snapshot);
-      nodes = p4est_nodes_new (p4est, ghost);
-      sc_flops_shot (&fi, &snapshot);
-      sc_stats_set1 (&stats[TIMINGS_NODES], snapshot.iwtime, "Nodes");
+#else
+    if (config == P4EST_CONFIG_PERIODIC) {
+      connectivity = p8est_connectivity_new_periodic ();
+    }
+    else if (config == P4EST_CONFIG_ROTWRAP) {
+      connectivity = p8est_connectivity_new_rotwrap ();
+    }
+    else if (config == P4EST_CONFIG_TWOCUBES) {
+      connectivity = p8est_connectivity_new_twocubes ();
+    }
+    else if (config == P4EST_CONFIG_ROTCUBES) {
+      connectivity = p8est_connectivity_new_rotcubes ();
+    }
+    else if (config == P4EST_CONFIG_SHELL) {
+      connectivity = p8est_connectivity_new_shell ();
     }
     else {
-      sc_stats_set1 (&stats[TIMINGS_NODES], 0., "Nodes");
+      connectivity = p8est_connectivity_new_unitcube ();
     }
+#endif
 
-    /* set this anyway so the output format is dimension independent */
-    sc_stats_set1 (&stats[TIMINGS_TRILINEAR], 0., "Trilinear");
-  #ifdef P4_TO_P8
-    if (do_trilinear) {
-      /* time trilinear mesh extraction */
-      sc_flops_snap (&fi, &snapshot);
-      mesh = p8est_trilinear_mesh_new_from_nodes (p4est, nodes);
-      sc_flops_shot (&fi, &snapshot);
-      sc_stats_set1 (&stats[TIMINGS_TRILINEAR], snapshot.iwtime, "Trilinear");
-
-      /* destroy mesh related memory */
-      p8est_trilinear_mesh_destroy (mesh);
-    }
-  #endif
-
-    if (!skip_nodes) {
-      p4est_nodes_destroy (nodes);
-    }
-
-    /* time the lnode numbering */
-    if (!skip_lnodes) {
-      sc_flops_snap (&fi, &snapshot);
-      lnodes = p4est_lnodes_new (p4est, ghost, 1);
-      sc_flops_shot (&fi, &snapshot);
-      sc_stats_set1 (&stats[TIMINGS_LNODES], snapshot.iwtime, "L-Nodes");
-      p4est_lnodes_destroy (lnodes);
+    /* create new p4est from scratch */
+    if (oldschool) {
+      regression = regression_oldschool;
+      p4est = p4est_new_ext (mpi->mpicomm, connectivity,
+                             15, 0, 0, 0, NULL, NULL);
     }
     else {
-      sc_stats_set1 (&stats[TIMINGS_LNODES], 0., "L-Nodes");
+      regression = regression_latest;
+      p4est = p4est_new_ext (mpi->mpicomm, connectivity,
+                             0, refine_level - level_shift, 1, 0, NULL, NULL);
     }
 
-    if (test_multiple_orders) {
-      sc_flops_snap (&fi, &snapshot);
-      lnodes = p4est_lnodes_new (p4est, ghost, 3);
-      sc_flops_shot (&fi, &snapshot);
-      sc_stats_set1 (&stats[TIMINGS_LNODES3], snapshot.iwtime, "L-Nodes 3");
-      p4est_lnodes_destroy (lnodes);
+    /* print all available regression tests */
+    if (generate) {
+      const char         *config_name = NULL;
 
-      sc_flops_snap (&fi, &snapshot);
-      lnodes = p4est_lnodes_new (p4est, ghost, 7);
-      sc_flops_shot (&fi, &snapshot);
-      sc_stats_set1 (&stats[TIMINGS_LNODES7], snapshot.iwtime, "L-Nodes 7");
-      p4est_lnodes_destroy (lnodes);
-    }
-    else {
-      sc_stats_set1 (&stats[TIMINGS_LNODES3], 0., "L-Nodes 3");
-      sc_stats_set1 (&stats[TIMINGS_LNODES7], 0., "L-Nodes 7");
-    }
-
-    p4est_ghost_destroy (ghost);
-
-    /* time a partition with a shift of all elements by one processor */
-    for (i = 0, next_quadrant = 0; i < p4est->mpisize; ++i) {
-      prev_quadrant = next_quadrant;
-      next_quadrant = (p4est->global_num_quadrants * (i + 1)) / p4est->mpisize;
-      quadrant_counts[i] = (p4est_locidx_t) (next_quadrant - prev_quadrant);
-    }
-    if (p4est->mpisize > 1) {
-      quadrant_counts[0] += quadrant_counts[p4est->mpisize - 1];  /* same type */
-      quadrant_counts[p4est->mpisize - 1] = 0;
-    }
-
-    sc_flops_snap (&fi, &snapshot);
-    global_shipped = p4est_partition_given (p4est, quadrant_counts);
-    sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[TIMINGS_REPARTITION], snapshot.iwtime, "Repartition");
-
-    P4EST_GLOBAL_PRODUCTIONF
-      ("Done " P4EST_STRING "_partition_given shipped %lld quadrants %.3g%%\n",
-       (long long) global_shipped,
-       global_shipped * 100. / p4est->global_num_quadrants);
-    P4EST_ASSERT (crc == p4est_checksum (p4est));
-
-    /* verify forest checksum */
-    if (regression != NULL && mpi->mpirank == 0) {
+      P4EST_GLOBAL_PRODUCTION ("Checksum regression tests available:\n");
       for (r = regression; r->config != P4EST_CONFIG_NULL; ++r) {
-        if (r->config != config || r->mpisize != mpi->mpisize
-            || r->level != refine_level)
-          continue;
-        SC_CHECK_ABORT (crc == r->checksum, "Checksum mismatch");
-        P4EST_GLOBAL_INFO ("Checksum regression OK\n");
-        break;
+        switch (r->config) {
+        case P4EST_CONFIG_PERIODIC:
+          config_name = "periodic";
+          break;
+#ifndef P4_TO_P8
+        case P4EST_CONFIG_THREE:
+          config_name = "three";
+          break;
+        case P4EST_CONFIG_MOEBIUS:
+          config_name = "moebius";
+          break;
+        case P4EST_CONFIG_STAR:
+          config_name = "star";
+          break;
+#else
+        case P4EST_CONFIG_ROTWRAP:
+          config_name = "rotwrap";
+          break;
+        case P4EST_CONFIG_TWOCUBES:
+          config_name = "twocubes";
+          break;
+        case P4EST_CONFIG_ROTCUBES:
+          config_name = "rotcubes";
+          break;
+        case P4EST_CONFIG_SHELL:
+          config_name = "shell";
+          break;
+#endif
+        default:
+          config_name = "unit";
+          break;
+        }
+        P4EST_GLOBAL_PRODUCTIONF ("mpirun -np %3d %s%s -c %10s -l %2d\n",
+                                  r->mpisize, opt->program_path,
+                                  oldschool ? " --oldschool" : "",
+                                  config_name, r->level);
       }
     }
+  }
+  else {
+    p4est = p4est_load (load_name, mpi->mpicomm, 0, 0, NULL, &connectivity);
+  }
 
-    /* print status and checksum */
-    P4EST_GLOBAL_STATISTICSF ("Processors %d level %d shift %d"
-                              " checksums 0x%08x 0x%08x\n",
-                              mpi->mpisize, refine_level, level_shift,
-                              crc, gcrc);
-    P4EST_GLOBAL_STATISTICSF ("Level %d refined to %lld balanced to %lld\n",
-                              refine_level, (long long) count_refined,
-                              (long long) count_balanced);
+  p4est->inspect = P4EST_ALLOC_ZERO (p4est_inspect_t, 1);
+  p4est->inspect->use_balance_ranges = use_ranges;
+  p4est->inspect->use_balance_ranges_notify = use_ranges_notify;
+  p4est->inspect->use_balance_verify = use_balance_verify;
+  p4est->inspect->balance_max_ranges = max_ranges;
+  P4EST_GLOBAL_STATISTICSF
+    ("Balance: new overlap %d new subtree %d borders %d\n", overlap,
+     (overlap && subtree), (overlap && borders));
+  quadrant_counts = P4EST_ALLOC (p4est_locidx_t, p4est->mpisize);
 
-    /* calculate and print timings */
-    sc_stats_compute (mpi->mpicomm, TIMINGS_NUM_STATS, stats);
-    sc_stats_print (p4est_package_id, SC_LP_STATISTICS,
-                    TIMINGS_NUM_STATS, stats, 1, 1);
+  /* time refine */
+  sc_flops_snap (&fi, &snapshot);
+  p4est_refine (p4est, 1, refine_fractal, NULL);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[TIMINGS_REFINE], snapshot.iwtime, "Refine");
+#ifdef P4EST_TIMINGS_VTK
+  p4est_vtk_write_file (p4est, "timings_refined");
+#endif
+  count_refined = p4est->global_num_quadrants;
 
-    /* destroy the p4est and its connectivity structure */
-    P4EST_FREE (quadrant_counts);
-    P4EST_FREE (p4est->inspect);
-    p4est_destroy (p4est);
-    p4est_connectivity_destroy (connectivity);
+  /* time balance */
+  sc_flops_snap (&fi, &snapshot);
+  p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[TIMINGS_BALANCE], snapshot.iwtime, "Balance");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_A],
+                 p4est->inspect->balance_A, "Balance A time");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM],
+                 p4est->inspect->balance_comm, "Balance comm time");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_B],
+                 p4est->inspect->balance_B, "Balance B time");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_A_COUNT_IN],
+                 (double) p4est->inspect->balance_A_count_in,
+                 "Balance A count inlist");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_A_COUNT_OUT],
+                 (double) p4est->inspect->balance_A_count_out,
+                 "Balance A count outlist");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM_SENT],
+                 (double) p4est->inspect->balance_comm_sent,
+                 "Balance sent second round");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_COMM_NZPEERS],
+                 (double) p4est->inspect->balance_comm_nzpeers,
+                 "Balance nonzero peers second round");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_B_COUNT_IN],
+                 (double) p4est->inspect->balance_B_count_in,
+                 "Balance B count inlist");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_B_COUNT_OUT],
+                 (double) p4est->inspect->balance_B_count_out,
+                 "Balance B count outlist");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_RANGES],
+                 p4est->inspect->balance_ranges, "Balance time for ranges");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_NOTIFY],
+                 p4est->inspect->balance_notify, "Balance time for notify");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_NOTIFY_ALLGATHER],
+                 p4est->inspect->balance_notify_allgather,
+                 "Balance time for notify_allgather");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_A_ZERO_RECEIVES],
+                 p4est->inspect->balance_zero_receives[0],
+                 "Balance A zero receives");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_A_ZERO_SENDS],
+                 p4est->inspect->balance_zero_sends[0],
+                 "Balance A zero sends");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_B_ZERO_RECEIVES],
+                 p4est->inspect->balance_zero_receives[1],
+                 "Balance B zero receives");
+  sc_stats_set1 (&stats[TIMINGS_BALANCE_B_ZERO_SENDS],
+                 p4est->inspect->balance_zero_sends[1],
+                 "Balance B zero sends");
+#ifdef P4EST_TIMINGS_VTK
+  p4est_vtk_write_file (p4est, "timings_balanced");
+#endif
+  count_balanced = p4est->global_num_quadrants;
+  crc = p4est_checksum (p4est);
 
-    printf("[HOLKE] process %i thread %i end work\n",mpi->mpirank,thread_data->threadid);
+  /* time rebalance - is a noop on the tree */
+  sc_flops_snap (&fi, &snapshot);
+  p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE], snapshot.iwtime, "Rebalance");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_A],
+                 p4est->inspect->balance_A, "Rebalance A time");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM],
+                 p4est->inspect->balance_comm, "Rebalance comm time");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_B],
+                 p4est->inspect->balance_B, "Rebalance B time");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_A_COUNT_IN],
+                 (double) p4est->inspect->balance_A_count_in,
+                 "Rebalance A count inlist");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_A_COUNT_OUT],
+                 (double) p4est->inspect->balance_A_count_out,
+                 "Rebalance A count outlist");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM_SENT],
+                 (double) p4est->inspect->balance_comm_sent,
+                 "Rebalance sent second round");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_COMM_NZPEERS],
+                 (double) p4est->inspect->balance_comm_nzpeers,
+                 "Rebalance nonzero peers second round");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_B_COUNT_IN],
+                 (double) p4est->inspect->balance_B_count_in,
+                 "Rebalance B count inlist");
+  sc_stats_set1 (&stats[TIMINGS_REBALANCE_B_COUNT_OUT],
+                 (double) p4est->inspect->balance_B_count_out,
+                 "Rebalance B count outlist");
+  P4EST_ASSERT (count_balanced == p4est->global_num_quadrants);
+  P4EST_ASSERT (crc == p4est_checksum (p4est));
+
+  /* time a uniform partition */
+  sc_flops_snap (&fi, &snapshot);
+  p4est_partition (p4est, NULL);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[TIMINGS_PARTITION], snapshot.iwtime, "Partition");
+#ifdef P4EST_TIMINGS_VTK
+  p4est_vtk_write_file (p4est, "timings_partitioned");
+#endif
+  P4EST_ASSERT (crc == p4est_checksum (p4est));
+
+  /* time building the ghost layer */
+  sc_flops_snap (&fi, &snapshot);
+  ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[TIMINGS_GHOSTS], snapshot.iwtime, "Ghost layer");
+  gcrc = p4est_ghost_checksum (p4est, ghost);
+
+  /* time the node numbering */
+  if (!skip_nodes) {
+    sc_flops_snap (&fi, &snapshot);
+    nodes = p4est_nodes_new (p4est, ghost);
+    sc_flops_shot (&fi, &snapshot);
+    sc_stats_set1 (&stats[TIMINGS_NODES], snapshot.iwtime, "Nodes");
+  }
+  else {
+    sc_stats_set1 (&stats[TIMINGS_NODES], 0., "Nodes");
+  }
+
+  /* set this anyway so the output format is dimension independent */
+  sc_stats_set1 (&stats[TIMINGS_TRILINEAR], 0., "Trilinear");
+#ifdef P4_TO_P8
+  if (do_trilinear) {
+    /* time trilinear mesh extraction */
+    sc_flops_snap (&fi, &snapshot);
+    mesh = p8est_trilinear_mesh_new_from_nodes (p4est, nodes);
+    sc_flops_shot (&fi, &snapshot);
+    sc_stats_set1 (&stats[TIMINGS_TRILINEAR], snapshot.iwtime, "Trilinear");
+
+    /* destroy mesh related memory */
+    p8est_trilinear_mesh_destroy (mesh);
+  }
+#endif
+
+  if (!skip_nodes) {
+    p4est_nodes_destroy (nodes);
+  }
+
+  /* time the lnode numbering */
+  if (!skip_lnodes) {
+    sc_flops_snap (&fi, &snapshot);
+    lnodes = p4est_lnodes_new (p4est, ghost, 1);
+    sc_flops_shot (&fi, &snapshot);
+    sc_stats_set1 (&stats[TIMINGS_LNODES], snapshot.iwtime, "L-Nodes");
+    p4est_lnodes_destroy (lnodes);
+  }
+  else {
+    sc_stats_set1 (&stats[TIMINGS_LNODES], 0., "L-Nodes");
+  }
+
+  if (test_multiple_orders) {
+    sc_flops_snap (&fi, &snapshot);
+    lnodes = p4est_lnodes_new (p4est, ghost, 3);
+    sc_flops_shot (&fi, &snapshot);
+    sc_stats_set1 (&stats[TIMINGS_LNODES3], snapshot.iwtime, "L-Nodes 3");
+    p4est_lnodes_destroy (lnodes);
+
+    sc_flops_snap (&fi, &snapshot);
+    lnodes = p4est_lnodes_new (p4est, ghost, 7);
+    sc_flops_shot (&fi, &snapshot);
+    sc_stats_set1 (&stats[TIMINGS_LNODES7], snapshot.iwtime, "L-Nodes 7");
+    p4est_lnodes_destroy (lnodes);
+  }
+  else {
+    sc_stats_set1 (&stats[TIMINGS_LNODES3], 0., "L-Nodes 3");
+    sc_stats_set1 (&stats[TIMINGS_LNODES7], 0., "L-Nodes 7");
+  }
+
+  p4est_ghost_destroy (ghost);
+
+  /* time a partition with a shift of all elements by one processor */
+  for (i = 0, next_quadrant = 0; i < p4est->mpisize; ++i) {
+    prev_quadrant = next_quadrant;
+    next_quadrant = (p4est->global_num_quadrants * (i + 1)) / p4est->mpisize;
+    quadrant_counts[i] = (p4est_locidx_t) (next_quadrant - prev_quadrant);
+  }
+  if (p4est->mpisize > 1) {
+    quadrant_counts[0] += quadrant_counts[p4est->mpisize - 1];  /* same type */
+    quadrant_counts[p4est->mpisize - 1] = 0;
+  }
+
+  sc_flops_snap (&fi, &snapshot);
+  global_shipped = p4est_partition_given (p4est, quadrant_counts);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[TIMINGS_REPARTITION], snapshot.iwtime, "Repartition");
+
+  P4EST_GLOBAL_PRODUCTIONF
+    ("Done " P4EST_STRING "_partition_given shipped %lld quadrants %.3g%%\n",
+     (long long) global_shipped,
+     global_shipped * 100. / p4est->global_num_quadrants);
+  P4EST_ASSERT (crc == p4est_checksum (p4est));
+
+  /* verify forest checksum */
+  if (regression != NULL && mpi->mpirank == 0) {
+    for (r = regression; r->config != P4EST_CONFIG_NULL; ++r) {
+      if (r->config != config || r->mpisize != mpi->mpisize
+          || r->level != refine_level)
+        continue;
+      SC_CHECK_ABORT (crc == r->checksum, "Checksum mismatch");
+      P4EST_GLOBAL_INFO ("Checksum regression OK\n");
+      break;
+    }
+  }
+
+  /* print status and checksum */
+  P4EST_GLOBAL_STATISTICSF ("Processors %d level %d shift %d"
+                            " checksums 0x%08x 0x%08x\n",
+                            mpi->mpisize, refine_level, level_shift,
+                            crc, gcrc);
+  P4EST_GLOBAL_STATISTICSF ("Level %d refined to %lld balanced to %lld\n",
+                            refine_level, (long long) count_refined,
+                            (long long) count_balanced);
+
+  /* calculate and print timings */
+  sc_stats_compute (mpi->mpicomm, TIMINGS_NUM_STATS, stats);
+  sc_stats_print (p4est_package_id, SC_LP_STATISTICS,
+                  TIMINGS_NUM_STATS, stats, 1, 1);
+
+  /* destroy the p4est and its connectivity structure */
+  P4EST_FREE (quadrant_counts);
+  P4EST_FREE (p4est->inspect);
+  p4est_destroy (p4est);
+  p4est_connectivity_destroy (connectivity);
+
+  printf ("[HOLKE] process %i thread %i end work\n", mpi->mpirank,
+          thread_data->threadid);
 }
 
 int
@@ -674,9 +676,10 @@ main (int argc, char **argv)
   int                 mpi_thread_provided;
 
   /* initialize MPI and p4est internals */
-  mpiret=MPI_Init_thread(&argc,&argv,MPI_THREAD_MULTIPLE,&mpi_thread_provided);
-  SC_CHECK_MPI(mpiret);
-  P4EST_ASSERT(mpi_thread_provided==MPI_THREAD_MULTIPLE);
+  mpiret =
+    MPI_Init_thread (&argc, &argv, MPI_THREAD_MULTIPLE, &mpi_thread_provided);
+  SC_CHECK_MPI (mpiret);
+  P4EST_ASSERT (mpi_thread_provided == MPI_THREAD_MULTIPLE);
   mpi->mpicomm = MPI_COMM_WORLD;
   mpiret = MPI_Comm_size (mpi->mpicomm, &mpi->mpisize);
   SC_CHECK_MPI (mpiret);
@@ -817,49 +820,50 @@ main (int argc, char **argv)
 
   /* hier forken */
   {
-      timings_thread_data_t TD[NUM_THREADS];
-      mpi_context_t mpis[NUM_THREADS];
-      int i,ret;
-      pthread_attr_t attr;
-      pthread_t thread[NUM_THREADS];
-      void *threads_retval;
+    timings_thread_data_t TD[NUM_THREADS];
+    mpi_context_t       mpis[NUM_THREADS];
+    int                 i, ret;
+    pthread_attr_t      attr;
+    pthread_t           thread[NUM_THREADS];
+    void               *threads_retval;
 
-      pthread_attr_init(&attr);
-      pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-      for(i=0;i<NUM_THREADS;i++){
-          TD[i].borders=borders;
-          TD[i].config=config;
-          TD[i].generate=generate;
-          TD[i].load_name=load_name;
-          TD[i].max_ranges=max_ranges;
-          mpis[i].mpirank=mpi->mpirank;
-          mpis[i].mpisize=mpi->mpisize;
-          mpiret=MPI_Comm_dup(mpi->mpicomm,&mpis[i].mpicomm);
-          SC_CHECK_MPI(mpiret);
-          TD[i].mpi_context=mpis+i;
+    pthread_attr_init (&attr);
+    pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_JOINABLE);
+    for (i = 0; i < NUM_THREADS; i++) {
+      TD[i].borders = borders;
+      TD[i].config = config;
+      TD[i].generate = generate;
+      TD[i].load_name = load_name;
+      TD[i].max_ranges = max_ranges;
+      mpis[i].mpirank = mpi->mpirank;
+      mpis[i].mpisize = mpi->mpisize;
+      mpiret = MPI_Comm_dup (mpi->mpicomm, &mpis[i].mpicomm);
+      SC_CHECK_MPI (mpiret);
+      TD[i].mpi_context = mpis + i;
 
-          TD[i].oldschool=oldschool;
-          TD[i].opt=opt;
-          TD[i].overlap=overlap;
-          TD[i].skip_lnodes=skip_lnodes;
-          TD[i].skip_nodes=skip_nodes;
-          TD[i].subtree=subtree;
-          TD[i].test_multiple_orders=test_multiple_orders;
-          TD[i].threadid=i;
-          TD[i].use_balance_verify=use_balance_verify;
-          TD[i].use_ranges=use_ranges;
-          TD[i].use_ranges_notify=use_ranges_notify;
-          P4EST_GLOBAL_PRODUCTIONF ("Forking thread %i.\n",i);
-          ret=pthread_create(thread+i,&attr,thread_main,(void*)(TD+i));
-          P4EST_ASSERT(ret==0);
-      }
-      printf("[HOLKE] process %i started all threads\n",mpi->mpirank);
-      for(i=0;i<NUM_THREADS;i++){
-          pthread_join(thread[i],threads_retval);
-          printf("[HOLKE] process %i joined thread %i\n",mpi->mpirank,i);
-          fflush(stdout);
-      }
-      pthread_attr_destroy(&attr);
+      TD[i].oldschool = oldschool;
+      TD[i].opt = opt;
+      TD[i].overlap = overlap;
+      TD[i].skip_lnodes = skip_lnodes;
+      TD[i].skip_nodes = skip_nodes;
+      TD[i].subtree = subtree;
+      TD[i].test_multiple_orders = test_multiple_orders;
+      TD[i].threadid = i;
+      TD[i].use_balance_verify = use_balance_verify;
+      TD[i].use_ranges = use_ranges;
+      TD[i].use_ranges_notify = use_ranges_notify;
+      P4EST_GLOBAL_PRODUCTIONF ("Forking thread %i.\n", i);
+      ret =
+        pthread_create (thread + i, &attr, thread_main, (void *) (TD + i));
+      P4EST_ASSERT (ret == 0);
+    }
+    printf ("[HOLKE] process %i started all threads\n", mpi->mpirank);
+    for (i = 0; i < NUM_THREADS; i++) {
+      pthread_join (thread[i], threads_retval);
+      printf ("[HOLKE] process %i joined thread %i\n", mpi->mpirank, i);
+      fflush (stdout);
+    }
+    pthread_attr_destroy (&attr);
   }
 
   sc_options_destroy (opt);
