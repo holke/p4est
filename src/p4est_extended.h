@@ -37,6 +37,43 @@
 
 SC_EXTERN_C_BEGIN;
 
+/* Data pertaining to selecting, inspecting, and profiling algorithms.
+ * A pointer to this structure is hooked into the p4est main structure.
+ *
+ * TODO: Describe the purpose of various switches, counters, and timings.
+ *
+ * The balance_ranges and balance_notify* times are collected
+ * whenever an inspect structure is present in p4est.
+ */
+struct p4est_inspect
+{
+  /** Use sc_ranges to determine the asymmetric communication pattern.
+   * If \a use_balance_ranges is false (the default), sc_notify is used. */
+  int                 use_balance_ranges;
+  /** If true, call both sc_ranges and sc_notify and verify consistency.
+   * Which is actually used is still determined by \a use_balance_ranges. */
+  int                 use_balance_ranges_notify;
+  /** Verify sc_ranges and/or sc_notify as applicable. */
+  int                 use_balance_verify;
+  /** If positive and smaller than p4est_num ranges, overrides it */
+  int                 balance_max_ranges;
+  size_t              balance_A_count_in;
+  size_t              balance_A_count_out;
+  size_t              balance_comm_sent;
+  size_t              balance_comm_nzpeers;
+  size_t              balance_B_count_in;
+  size_t              balance_B_count_out;
+  size_t              balance_zero_sends[2], balance_zero_receives[2];
+  double              balance_A;
+  double              balance_comm;
+  double              balance_B;
+  double              balance_ranges;   /**< time spent in sc_ranges */
+  double              balance_notify;   /**< time spent in sc_notify */
+  /** time spent in sc_notify_allgather */
+  double              balance_notify_allgather;
+  int                 use_B;
+};
+
 /** Callback function prototype used by extended routines when the quadrants
  * of an existing, valid p4est are changed.  The callback allows the user to
  * make changes to newly initialized quadrants before the quadrants that they
@@ -75,7 +112,7 @@ typedef void        (*p4est_replace_t) (p4est_t * p4est,
  *                              The latter is partition-specific so that
  *                              is usually not a good idea.
  */
-p4est_t            *p4est_new_ext (MPI_Comm mpicomm,
+p4est_t            *p4est_new_ext (sc_MPI_Comm mpicomm,
                                    p4est_connectivity_t * connectivity,
                                    p4est_locidx_t min_quadrants,
                                    int min_level, int fill_uniform,
@@ -213,11 +250,20 @@ void                p4est_save_ext (const char *filename, p4est_t * p4est,
  *                  argument.
  * \note            Aborts on file errors or invalid file contents.
  */
-p4est_t            *p4est_load_ext (const char *filename, MPI_Comm mpicomm,
+p4est_t            *p4est_load_ext (const char *filename, sc_MPI_Comm mpicomm,
                                     size_t data_size, int load_data,
                                     int autopartition, int broadcasthead,
                                     void *user_pointer,
                                     p4est_connectivity_t ** connectivity);
+
+/** The same as p4est_load_ext, but reading the connectivity/p4est from an
+ * open sc_io_source_t stream.
+ */
+p4est_t            *p4est_source_ext (sc_io_source_t * src,
+                                      sc_MPI_Comm mpicomm, size_t data_size,
+                                      int load_data, int autopartition,
+                                      int broadcasthead, void *user_pointer,
+                                      p4est_connectivity_t ** connectivity);
 
 SC_EXTERN_C_END;
 

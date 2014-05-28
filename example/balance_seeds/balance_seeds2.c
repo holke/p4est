@@ -116,7 +116,7 @@ refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
 int
 main (int argc, char **argv)
 {
-  MPI_Comm            mpicomm;
+  sc_MPI_Comm         mpicomm;
   int                 mpiret;
   int                 mpisize, mpirank;
   p4est_t            *p4est;
@@ -134,12 +134,12 @@ main (int argc, char **argv)
 #endif
 
   /* initialize MPI */
-  mpiret = MPI_Init (&argc, &argv);
+  mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpicomm = MPI_COMM_WORLD;
-  mpiret = MPI_Comm_size (mpicomm, &mpisize);
+  mpicomm = sc_MPI_COMM_WORLD;
+  mpiret = sc_MPI_Comm_size (mpicomm, &mpisize);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpicomm, &mpirank);
+  mpiret = sc_MPI_Comm_rank (mpicomm, &mpirank);
   SC_CHECK_MPI (mpiret);
 
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
@@ -157,7 +157,7 @@ main (int argc, char **argv)
   p4est_refine (p4est, 1, refine_fn, init_fn);
 
   p4est_vtk_write_header (p4est, NULL, 1. - 2. * SC_EPS,
-                          0, 0, 0, "level", NULL, filename);
+                          0, 0, 0, 0, "level", NULL, filename);
   vtkvec = sc_dmatrix_new (p4est->local_num_quadrants, P4EST_CHILDREN);
   tree = p4est_tree_array_index (p4est->trees, 0);
   quadrants = &(tree->quadrants);
@@ -178,7 +178,7 @@ main (int argc, char **argv)
 
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;
