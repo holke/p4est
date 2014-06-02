@@ -501,7 +501,7 @@ void
 
   /* time a uniform partition */
   sc_flops_snap (&fi, &snapshot);
-  p4est_partition (p4est, NULL);
+  p4est_partition (p4est, 0,NULL);
   sc_flops_shot (&fi, &snapshot);
   sc_stats_set1 (&stats[TIMINGS_PARTITION], snapshot.iwtime, "Partition");
 #ifdef P4EST_TIMINGS_VTK
@@ -871,7 +871,7 @@ main (int argc, char **argv)
   /* clean up and exit */
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;
