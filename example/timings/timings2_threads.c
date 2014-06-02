@@ -141,7 +141,6 @@ typedef struct
 }
 mpi_context_t;
 
-#define NUM_THREADS 2
 typedef struct
 {
   mpi_context_t      *mpi_context;
@@ -247,8 +246,8 @@ refine_fractal (p4est_t * p4est, p4est_topidx_t which_tree,
     );
 }
 
-void
-*thread_main (void *Data)
+void               *
+thread_main (void *Data)
 {
   timings_thread_data_t *thread_data = (timings_thread_data_t *) Data;
   int                 mpiret;
@@ -501,7 +500,7 @@ void
 
   /* time a uniform partition */
   sc_flops_snap (&fi, &snapshot);
-  p4est_partition (p4est, 0,NULL);
+  p4est_partition (p4est, 0, NULL);
   sc_flops_shot (&fi, &snapshot);
   sc_stats_set1 (&stats[TIMINGS_PARTITION], snapshot.iwtime, "Partition");
 #ifdef P4EST_TIMINGS_VTK
@@ -674,6 +673,7 @@ main (int argc, char **argv)
   int                 test_multiple_orders;
   int                 skip_nodes, skip_lnodes;
   int                 mpi_thread_provided;
+  int                 num_threads;
 
   /* initialize MPI and p4est internals */
   mpiret =
@@ -736,6 +736,8 @@ main (int argc, char **argv)
                          "Also time lnodes for orders 2, 4, and 8");
   sc_options_add_switch (opt, 0, "skip-nodes", &skip_nodes, "Skip nodes");
   sc_options_add_switch (opt, 0, "skip-lnodes", &skip_lnodes, "Skip lnodes");
+  sc_options_add_int (opt, 0, "threads", &num_threads, 2,
+                      "number of threads per process");
 
   first_argc = sc_options_parse (p4est_package_id, SC_LP_DEFAULT,
                                  opt, argc, argv);
@@ -818,18 +820,22 @@ main (int argc, char **argv)
     ("Processors %d configuration %s level %d shift %d\n", mpi->mpisize,
      config_name, refine_level, level_shift);
 
-  /* hier forken */
+  /* generate threads and start work */
   {
-    timings_thread_data_t TD[NUM_THREADS];
-    mpi_context_t       mpis[NUM_THREADS];
+    timings_thread_data_t *TD;
+    mpi_context_t      *mpis;
     int                 i, ret;
     pthread_attr_t      attr;
-    pthread_t           thread[NUM_THREADS];
+    pthread_t          *thread;
     void               *threads_retval;
+
+    TD = P4EST_ALLOC (timings_thread_data_t, num_threads);
+    mpis = P4EST_ALLOC (mpi_context_t, num_threads);
+    thread = P4EST_ALLOC (pthread_t, num_threads);
 
     pthread_attr_init (&attr);
     pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_JOINABLE);
-    for (i = 0; i < NUM_THREADS; i++) {
+    for (i = 0; i < num_threads; i++) {
       TD[i].borders = borders;
       TD[i].config = config;
       TD[i].generate = generate;
@@ -858,12 +864,15 @@ main (int argc, char **argv)
       P4EST_ASSERT (ret == 0);
     }
     printf ("[HOLKE] process %i started all threads\n", mpi->mpirank);
-    for (i = 0; i < NUM_THREADS; i++) {
+    for (i = 0; i < num_threads; i++) {
       pthread_join (thread[i], threads_retval);
       printf ("[HOLKE] process %i joined thread %i\n", mpi->mpirank, i);
       fflush (stdout);
     }
     pthread_attr_destroy (&attr);
+    P4EST_FREE (TD);
+    P4EST_FREE (mpis);
+    P4EST_FREE (thread);
   }
 
   sc_options_destroy (opt);
