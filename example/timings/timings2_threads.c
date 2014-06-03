@@ -156,6 +156,10 @@ typedef struct
   int                 oldschool, generate;
   int                 skip_nodes, skip_lnodes;
   int                 test_multiple_orders;
+#ifdef P4_TO_P8
+  int                 do_trilinear;
+  trilinear_mesh_t   *mesh;
+#endif
 } timings_thread_data_t;
 
 static int          refine_level = 0;
@@ -282,6 +286,10 @@ thread_main (void *Data)
   int                 skip_nodes = thread_data->skip_nodes;
   int                 test_multiple_orders =
     thread_data->test_multiple_orders;
+#ifdef P4_TO_P8
+  int                 do_trilinear = thread_data->do_trilinear;
+  trilinear_mesh__t  *mesh = thread_data->mesh;
+#endif
 
   /* start overall timing */
   mpiret = MPI_Barrier (mpi->mpicomm);
@@ -858,6 +866,10 @@ main (int argc, char **argv)
       TD[i].use_balance_verify = use_balance_verify;
       TD[i].use_ranges = use_ranges;
       TD[i].use_ranges_notify = use_ranges_notify;
+#ifdef P4_TO_P8
+      TD[i].do_trilinear = do_trilinear;
+      TD[i].mesh = mesh;
+#endif
       P4EST_GLOBAL_PRODUCTIONF ("Forking thread %i.\n", i);
       ret =
         pthread_create (thread + i, &attr, thread_main, (void *) (TD + i));
