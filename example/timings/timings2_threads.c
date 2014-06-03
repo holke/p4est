@@ -296,8 +296,7 @@ thread_main (void *Data)
   SC_CHECK_MPI (mpiret);
   sc_flops_start (&fi);
 
-  printf ("[HOLKE] process %i thread %i starting work\n", mpi->mpirank,
-          thread_data->threadid);
+  P4EST_LDEBUGF ("thread %i starting work\n", thread_data->threadid);
 
   /* create connectivity and forest structures */
   regression = NULL;
@@ -639,8 +638,7 @@ thread_main (void *Data)
   p4est_destroy (p4est);
   p4est_connectivity_destroy (connectivity);
 
-  printf ("[HOLKE] process %i thread %i end work\n", mpi->mpirank,
-          thread_data->threadid);
+  P4EST_LDEBUGF ("thread %i end work\n", thread_data->threadid);
 }
 
 int
@@ -870,16 +868,15 @@ main (int argc, char **argv)
       TD[i].do_trilinear = do_trilinear;
       TD[i].mesh = mesh;
 #endif
-      P4EST_GLOBAL_PRODUCTIONF ("Forking thread %i.\n", i);
+      P4EST_LDEBUGF ("Forking thread %i.\n", i);
       ret =
         pthread_create (thread + i, &attr, thread_main, (void *) (TD + i));
       P4EST_ASSERT (ret == 0);
     }
-    printf ("[HOLKE] process %i started all threads\n", mpi->mpirank);
+    P4EST_LDEBUGF ("started all %i threads\n", num_threads);
     for (i = 0; i < num_threads; i++) {
       pthread_join (thread[i], threads_retval);
-      printf ("[HOLKE] process %i joined thread %i\n", mpi->mpirank, i);
-      fflush (stdout);
+      P4EST_LDEBUGF ("joined thread %i\n", i);
     }
     pthread_attr_destroy (&attr);
     P4EST_FREE (TD);
