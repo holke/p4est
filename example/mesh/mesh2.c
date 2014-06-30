@@ -211,6 +211,7 @@ mesh_run (mpi_context_t * mpi, p4est_connectivity_t * connectivity,
 
   p4est = p4est_new (mpi->mpicomm, connectivity,
                      sizeof (user_data_t), init_fn, NULL);
+
   if (!uniform)
     p4est_vtk_write_file (p4est, NULL, P4EST_STRING "_mesh_new");
 

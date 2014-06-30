@@ -2850,6 +2850,20 @@ p4est_connectivity_complete (p4est_connectivity_t * conn)
   P4EST_ASSERT (p4est_connectivity_is_valid (conn));
 }
 
+
+void p4est_connectivity_reduce(p4est_connectivity_t * conn){
+    P4EST_FREE(conn->tree_to_corner);
+    P4EST_FREE(conn->ctt_offset);
+    P4EST_FREE(conn->corner_to_tree);
+    P4EST_FREE(conn->corner_to_corner);
+#ifdef P4_TO_P8
+    P4EST_FREE(conn->tree_to_edge);
+    P4EST_FREE(conn->ett_offset);
+    P4EST_FREE(conn->edge_to_tree);
+    P4EST_FREE(conn->edge_to_edge);
+#endif
+}
+
 void
 p4est_connectivity_permute (p4est_connectivity_t * conn, sc_array_t * inperm,
                             int is_current_to_new)

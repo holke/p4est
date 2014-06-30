@@ -452,6 +452,10 @@ main (int argc, char **argv)
     }
 #endif
 
+    p4est_connectivity_reduce(connectivity);
+    p4est_connectivity_complete(connectivity);
+    P4EST_ASSERT(p4est_connectivity_is_valid(connectivity));
+
     /* create new p4est from scratch */
     if (oldschool) {
       regression = regression_oldschool;
