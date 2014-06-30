@@ -269,6 +269,11 @@ main (int argc, char **argv)
   p8est = p8est_new_ext (mpi->mpicomm, connectivity, 1, 0, 0,
                          sizeof (user_data_t), init_fn, NULL);
 
+  /* Test p8est_connectivity_complete */
+  p8est_connectivity_reduce(connectivity);
+  p8est_connectivity_complete(connectivity);
+  P8EST_ASSERT(p4est_connectivity_is_valid(connectivity));
+
 #ifdef VTK_OUTPUT
   p8est_vtk_write_file (p8est, geom, "simple3_new");
 #endif

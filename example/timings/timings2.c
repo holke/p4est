@@ -451,7 +451,7 @@ main (int argc, char **argv)
       connectivity = p8est_connectivity_new_unitcube ();
     }
 #endif
-
+    /* Test p4est_connectivity_complete */
     p4est_connectivity_reduce(connectivity);
     p4est_connectivity_complete(connectivity);
     P4EST_ASSERT(p4est_connectivity_is_valid(connectivity));

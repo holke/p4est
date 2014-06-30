@@ -321,6 +321,11 @@ main (int argc, char **argv)
                          sizeof (user_data_t), init_fn, NULL);
   p4est_vtk_write_file (p4est, NULL, "simple2_new");
 
+  /* Test p4est_connectivity_complete */
+  p4est_connectivity_reduce(connectivity);
+  p4est_connectivity_complete(connectivity);
+  P4EST_ASSERT(p4est_connectivity_is_valid(connectivity));
+
   /* refinement and coarsening */
   p4est_refine (p4est, 1, refine_fn, init_fn);
   if (coarsen_fn != NULL) {
