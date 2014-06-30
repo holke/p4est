@@ -2863,12 +2863,12 @@ void p4est_connectivity_reduce(p4est_connectivity_t * conn){
     conn->corner_to_tree=NULL;
     conn->corner_to_corner=NULL;
 #ifdef P4_TO_P8
+    for(i=0;i<conn->num_edges;i++) conn->ett_offset[i]=0;
+    conn->ett_offset[conn->num_edges]=0;
     P4EST_FREE(conn->tree_to_edge);
-    P4EST_FREE(conn->ett_offset);
     P4EST_FREE(conn->edge_to_tree);
     P4EST_FREE(conn->edge_to_edge);
     conn->tree_to_edge=NULL;
-    conn->ett_offset=NULL;
     conn->edge_to_tree=NULL;
     conn->edge_to_edge=NULL;
 #endif
