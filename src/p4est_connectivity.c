@@ -2851,9 +2851,12 @@ p4est_connectivity_complete (p4est_connectivity_t * conn)
 }
 
 
-void p4est_connectivity_reduce(p4est_connectivity_t * conn){
-/*    P4EST_FREE(conn->tree_to_corner);
-    P4EST_FREE(conn->ctt_offset);
+void p4est_connectivity_reduce(p4est_connectivity_t * conn){ 
+    int i;
+
+    for(i=0;i<conn->num_corners;i++) conn->ctt_offset[i]=0;
+    conn->ctt_offset[conn->num_corners]=0;
+    P4EST_FREE(conn->tree_to_corner);
     P4EST_FREE(conn->corner_to_tree);
     P4EST_FREE(conn->corner_to_corner);
     conn->tree_to_corner=NULL;
@@ -2869,11 +2872,7 @@ void p4est_connectivity_reduce(p4est_connectivity_t * conn){
     conn->ett_offset=NULL;
     conn->edge_to_tree=NULL;
     conn->edge_to_edge=NULL;
-#endif      */
-    int i;
-
-    for(i=0;i<conn->num_corners;i++) conn->ctt_offset[i]=0;
-    conn->ctt_offset[conn->num_corners]=0;
+#endif
 }
 
 void
