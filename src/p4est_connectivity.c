@@ -2860,7 +2860,6 @@ void p4est_connectivity_reduce(p4est_connectivity_t * conn){
     P4EST_FREE(conn->corner_to_tree);
     P4EST_FREE(conn->corner_to_corner);
     conn->tree_to_corner=NULL;
-    conn->ctt_offset=NULL;
     conn->corner_to_tree=NULL;
     conn->corner_to_corner=NULL;
 #ifdef P4_TO_P8
