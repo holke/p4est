@@ -45,11 +45,6 @@
 #include <sc_allgather.h>
 #include <sc_sort.h>
 
-#ifdef SC_ALLGATHER
-#include <sc_allgather.h>
-#define MPI_Allgather sc_allgather
-#endif
-
 typedef struct
 {
   p4est_quadrant_t   *points;
@@ -101,7 +96,7 @@ p4est_points_refine (p4est_t * p4est, p4est_topidx_t which_tree,
 }
 
 p4est_t            *
-p4est_new_points (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
+p4est_new_points (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
                   int maxlevel, p4est_quadrant_t * points,
                   p4est_locidx_t num_points, p4est_locidx_t max_points,
                   size_t data_size, p4est_init_t init_fn, void *user_pointer)
@@ -111,7 +106,7 @@ p4est_new_points (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   int                 i, isizet;
   size_t              lcount;
   size_t             *nmemb;
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
   size_t              zz;
 #endif
   p4est_topidx_t      jt, num_trees;
@@ -125,13 +120,14 @@ p4est_new_points (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   P4EST_GLOBAL_PRODUCTIONF ("Into " P4EST_STRING
                             "_new_points with max level %d max points %lld\n",
                             maxlevel, (long long) max_points);
+  p4est_log_indent_push ();
   P4EST_ASSERT (p4est_connectivity_is_valid (connectivity));
   P4EST_ASSERT (max_points >= -1);
 
   /* retrieve MPI information */
-  mpiret = MPI_Comm_size (mpicomm, &num_procs);
+  mpiret = sc_MPI_Comm_size (mpicomm, &num_procs);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpicomm, &rank);
+  mpiret = sc_MPI_Comm_rank (mpicomm, &rank);
   SC_CHECK_MPI (mpiret);
 
   /* This implementation runs in O(P/p * maxlevel)
@@ -147,13 +143,13 @@ p4est_new_points (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   lcount = (size_t) num_points;
   nmemb = P4EST_ALLOC_ZERO (size_t, num_procs);
   isizet = (int) sizeof (size_t);
-  mpiret = MPI_Allgather (&lcount, isizet, MPI_BYTE,
-                          nmemb, isizet, MPI_BYTE, mpicomm);
+  mpiret = sc_MPI_Allgather (&lcount, isizet, sc_MPI_BYTE,
+                             nmemb, isizet, sc_MPI_BYTE, mpicomm);
   SC_CHECK_MPI (mpiret);
   sc_psort (mpicomm, points, nmemb, sizeof (p4est_quadrant_t),
             p4est_quadrant_compare_piggy);
   P4EST_FREE (nmemb);
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
   first_quad = points;
   for (zz = 1; zz < lcount; ++zz) {
     next_quad = points + zz;
@@ -342,7 +338,7 @@ p4est_new_points (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
     p4est_quadrant_last_descendant (quad, &tree->last_desc, P4EST_QMAXLEVEL);
 
     /* verification */
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
     first_quad = p4est_quadrant_array_index (&tree->quadrants, 0);
     for (zz = 1; zz < tree->quadrants.elem_count; ++zz) {
       next_quad = p4est_quadrant_array_index (&tree->quadrants, zz);
@@ -368,6 +364,7 @@ p4est_new_points (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
                   (long long) p4est->local_num_quadrants);
 
   P4EST_ASSERT (p4est_is_valid (p4est));
+  p4est_log_indent_pop ();
   P4EST_GLOBAL_PRODUCTIONF ("Done " P4EST_STRING
                             "_new_points with %lld total quadrants\n",
                             (long long) p4est->global_num_quadrants);
@@ -376,7 +373,7 @@ p4est_new_points (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   if (max_points >= 0) {
     p4est_refine_ext (p4est, 1, maxlevel, p4est_points_refine,
                       p4est_points_init, NULL);
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
     for (jt = first_tree; jt <= last_tree; ++jt) {
       tree = p4est_tree_array_index (p4est->trees, jt);
       first_quad = p4est_quadrant_array_index (&tree->quadrants, 0);

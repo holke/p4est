@@ -21,6 +21,15 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
+/** \file p4est_to_p8est.h
+ *
+ * Transform 2D \ref p4est routines into 3D \ref p8est routines.  This file can
+ * be included from a .c file that has been written for 2D to turn it into a 3D
+ * code with minor modifications.  We #define P4_TO_P8, which allows to compile
+ * a source file twice, once for 2D without and once for 3D with including this
+ * header, adding extra code for 3D if necessary.
+ */
+
 #ifndef P4EST_TO_P8EST_H
 #define P4EST_TO_P8EST_H
 
@@ -28,6 +37,8 @@
 #error "The include files p4est.h and p4est_to_p8est.h cannot be combined"
 #endif
 #define P4_TO_P8
+
+#include <p4est_base.h>
 
 /* redefine macros */
 #define P4EST_ONDISK_FORMAT             P8EST_ONDISK_FORMAT
@@ -44,8 +55,10 @@
 #define P4EST_QUADRANT_LEN              P8EST_QUADRANT_LEN
 #define P4EST_LAST_OFFSET               P8EST_LAST_OFFSET
 #define P4EST_QUADRANT_INIT             P8EST_QUADRANT_INIT
+#define P4EST_LEAF_IS_FIRST_IN_TREE     P8EST_LEAF_IS_FIRST_IN_TREE
 
 /* redefine enums */
+#define P4EST_COMM_TAG_FIRST            P8EST_COMM_TAG_FIRST
 #define P4EST_COMM_COUNT_PERTREE        P8EST_COMM_COUNT_PERTREE
 #define P4EST_COMM_BALANCE_FIRST_COUNT  P8EST_COMM_BALANCE_FIRST_COUNT
 #define P4EST_COMM_BALANCE_FIRST_LOAD   P8EST_COMM_BALANCE_FIRST_LOAD
@@ -60,6 +73,9 @@
 #define P4EST_COMM_GHOST_EXCHANGE       P8EST_COMM_GHOST_EXCHANGE
 #define P4EST_COMM_GHOST_EXPAND_COUNT   P8EST_COMM_GHOST_EXPAND_COUNT
 #define P4EST_COMM_GHOST_EXPAND_LOAD    P8EST_COMM_GHOST_EXPAND_LOAD
+#define P4EST_COMM_GHOST_SUPPORT_COUNT  P8EST_COMM_GHOST_SUPPORT_COUNT
+#define P4EST_COMM_GHOST_SUPPORT_LOAD   P8EST_COMM_GHOST_SUPPORT_LOAD
+#define P4EST_COMM_GHOST_CHECKSUM       P8EST_COMM_GHOST_CHECKSUM
 #define P4EST_COMM_NODES_QUERY          P8EST_COMM_NODES_QUERY
 #define P4EST_COMM_NODES_REPLY          P8EST_COMM_NODES_REPLY
 #define P4EST_COMM_SAVE                 P8EST_COMM_SAVE
@@ -67,9 +83,9 @@
 #define P4EST_COMM_LNODES_PASS          P8EST_COMM_LNODES_PASS
 #define P4EST_COMM_LNODES_OWNED         P8EST_COMM_LNODES_OWNED
 #define P4EST_COMM_LNODES_ALL           P8EST_COMM_LNODES_ALL
+#define P4EST_COMM_TAG_LAST             P8EST_COMM_TAG_LAST
 #define P4EST_CONNECT_FACE              P8EST_CONNECT_FACE
 #define P4EST_CONNECT_CORNER            P8EST_CONNECT_CORNER
-#define P4EST_CONNECT_DEFAULT           P8EST_CONNECT_DEFAULT
 #define P4EST_CONNECT_FULL              P8EST_CONNECT_FULL
 #define P4EST_CONN_ENCODE_NONE          P8EST_CONN_ENCODE_NONE
 #define P4EST_WRAP_NONE                 P8EST_WRAP_NONE
@@ -77,6 +93,9 @@
 #define P4EST_WRAP_COARSEN              P8EST_WRAP_COARSEN
 
 /* redefine types */
+#ifdef P4EST_BACKWARD_DEALII
+#define p4est_balance_type_t            p8est_balance_type_t
+#endif
 #define p4est_connect_type_t            p8est_connect_type_t
 #define p4est_connectivity_encode_t     p8est_connectivity_encode_t
 #define p4est_connectivity_t            p8est_connectivity_t
@@ -93,6 +112,7 @@
 #define p4est_coarsen_t                 p8est_coarsen_t
 #define p4est_weight_t                  p8est_weight_t
 #define p4est_ghost_t                   p8est_ghost_t
+#define p4est_ghost_exchange_t          p8est_ghost_exchange_t
 #define p4est_indep_t                   p8est_indep_t
 #define p4est_nodes_t                   p8est_nodes_t
 #define p4est_lnodes_t                  p8est_lnodes_t
@@ -121,14 +141,16 @@
 #define p4est_corner_face_corners       p8est_corner_face_corners
 #define p4est_child_corner_faces        p8est_child_corner_faces
 #define P4EST_DATA_UNINITIALIZED        P8EST_DATA_UNINITIALIZED
-#define p4est_num_ranges                p8est_num_ranges
 
 /* functions in p4est_connectivity */
+#define p4est_connectivity_face_neighbor_corner_orientation \
+        p8est_connectivity_face_neighbor_corner_orientation
 #define p4est_connectivity_memory_used  p8est_connectivity_memory_used
 #define p4est_connectivity_new          p8est_connectivity_new
 #define p4est_connectivity_new_brick    p8est_connectivity_new_brick
 #define p4est_connectivity_new_byname   p8est_connectivity_new_byname
 #define p4est_connectivity_new_copy     p8est_connectivity_new_copy
+#define p4est_connectivity_bcast        p8est_connectivity_bcast
 #define p4est_connectivity_destroy      p8est_connectivity_destroy
 #define p4est_connectivity_set_attr     p8est_connectivity_set_attr
 #define p4est_connectivity_is_valid     p8est_connectivity_is_valid
@@ -140,6 +162,7 @@
 #define p4est_connectivity_inflate      p8est_connectivity_inflate
 #define p4est_connectivity_load         p8est_connectivity_load
 #define p4est_connectivity_complete     p8est_connectivity_complete
+#define p4est_connectivity_reduce       p8est_connectivity_reduce
 #define p4est_expand_face_transform     p8est_expand_face_transform
 #define p4est_find_face_transform       p8est_find_face_transform
 #define p4est_find_corner_transform     p8est_find_corner_transform
@@ -148,6 +171,8 @@
 #define p4est_connectivity_permute      p8est_connectivity_permute
 #define p4est_connectivity_join_faces   p8est_connectivity_join_faces
 #define p4est_connectivity_is_equivalent p8est_connectivity_is_equivalent
+#define p4est_connectivity_read_inp_stream p8est_connectivity_read_inp_stream
+#define p4est_connectivity_read_inp     p8est_connectivity_read_inp
 
 /* functions in p4est */
 #define p4est_qcoord_to_vertex          p8est_qcoord_to_vertex
@@ -174,6 +199,7 @@
 /* functions in p4est_extended */
 #define p4est_replace_t                 p8est_replace_t
 #define p4est_new_ext                   p8est_new_ext
+#define p4est_mesh_new_ext              p8est_mesh_new_ext
 #define p4est_refine_ext                p8est_refine_ext
 #define p4est_coarsen_ext               p8est_coarsen_ext
 #define p4est_balance_ext               p8est_balance_ext
@@ -181,6 +207,7 @@
 #define p4est_partition_ext             p8est_partition_ext
 #define p4est_save_ext                  p8est_save_ext
 #define p4est_load_ext                  p8est_load_ext
+#define p4est_source_ext                p8est_source_ext
 
 /* functions in p4est_iterate */
 #define p4est_iterate                   p8est_iterate
@@ -201,6 +228,7 @@
 #define p4est_quadrant_compare          p8est_quadrant_compare
 #define p4est_quadrant_disjoint         p8est_quadrant_disjoint
 #define p4est_quadrant_compare_piggy    p8est_quadrant_compare_piggy
+#define p4est_quadrant_compare_local_num p8est_quadrant_compare_local_num
 #define p4est_quadrant_equal_fn         p8est_quadrant_equal_fn
 #define p4est_quadrant_hash_fn          p8est_quadrant_hash_fn
 #define p4est_node_equal_piggy_fn       p8est_node_equal_piggy_fn
@@ -305,6 +333,10 @@
 #define p4est_deflate_quadrants         p8est_deflate_quadrants
 #define p4est_inflate                   p8est_inflate
 
+/* functions in p4est_geometry */
+#define p4est_geometry_destroy          p8est_geometry_destroy
+#define p4est_geometry_new_connectivity p8est_geometry_new_connectivity
+
 /* functions in p4est_vtk */
 #define p4est_vtk_write_file            p8est_vtk_write_file
 #define p4est_vtk_write_all             p8est_vtk_write_all
@@ -319,10 +351,19 @@
 #define p4est_ghost_new                 p8est_ghost_new
 #define p4est_ghost_destroy             p8est_ghost_destroy
 #define p4est_ghost_exchange_data       p8est_ghost_exchange_data
+#define p4est_ghost_exchange_data_begin p8est_ghost_exchange_data_begin
+#define p4est_ghost_exchange_data_end   p8est_ghost_exchange_data_end
 #define p4est_ghost_exchange_custom     p8est_ghost_exchange_custom
+#define p4est_ghost_exchange_custom_begin p8est_ghost_exchange_custom_begin
+#define p4est_ghost_exchange_custom_end p8est_ghost_exchange_custom_end
 #define p4est_ghost_exchange_custom_levels p8est_ghost_exchange_custom_levels
+#define p4est_ghost_exchange_custom_levels_begin \
+                                        p8est_ghost_exchange_custom_levels_begin
+#define p4est_ghost_exchange_custom_levels_end \
+                                        p8est_ghost_exchange_custom_levels_end
 #define p4est_ghost_bsearch             p8est_ghost_bsearch
 #define p4est_ghost_contains            p8est_ghost_contains
+#define p4est_ghost_is_valid            p8est_ghost_is_valid
 #define p4est_face_quadrant_exists      p8est_face_quadrant_exists
 #define p4est_quadrant_exists           p8est_quadrant_exists
 #define p4est_is_balanced               p8est_is_balanced
@@ -338,6 +379,8 @@
 #define p4est_lnodes_is_valid           p8est_lnodes_is_valid
 #define p4est_lnodes_new                p8est_lnodes_new
 #define p4est_lnodes_destroy            p8est_lnodes_destroy
+#define p4est_ghost_support_lnodes      p8est_ghost_support_lnodes
+#define p4est_ghost_expand_by_lnodes    p8est_ghost_expand_by_lnodes
 #define p4est_lnodes_decode             p8est_lnodes_decode
 #define p4est_lnodes_share_owned_begin  p8est_lnodes_share_owned_begin
 #define p4est_lnodes_share_owned_end    p8est_lnodes_share_owned_end
@@ -358,6 +401,7 @@
 #define p4est_mesh_face_neighbor_init   p8est_mesh_face_neighbor_init
 #define p4est_mesh_face_neighbor_init2  p8est_mesh_face_neighbor_init2
 #define p4est_mesh_face_neighbor_next   p8est_mesh_face_neighbor_next
+#define p4est_mesh_face_neighbor_data   p8est_mesh_face_neighbor_data
 
 /* functions in p4est_balance */
 #define p4est_balance_seeds_face        p8est_balance_seeds_face
@@ -366,8 +410,11 @@
 
 /* functions in p4est_wrap */
 #define p4est_wrap_new_conn             p8est_wrap_new_conn
+#define p4est_wrap_new_brick            p8est_wrap_new_brick
 #define p4est_wrap_new_world            p8est_wrap_new_world
+#define p4est_wrap_new_ext              p8est_wrap_new_ext
 #define p4est_wrap_destroy              p8est_wrap_destroy
+#define p4est_wrap_set_hollow           p8est_wrap_set_hollow
 #define p4est_wrap_get_ghost            p8est_wrap_get_ghost
 #define p4est_wrap_get_mesh             p8est_wrap_get_mesh
 #define p4est_wrap_mark_refine          p8est_wrap_mark_refine
@@ -377,5 +424,11 @@
 #define p4est_wrap_complete             p8est_wrap_complete
 #define p4est_wrap_leaf_next            p8est_wrap_leaf_next
 #define p4est_wrap_leaf_first           p8est_wrap_leaf_first
+
+/* functions in p4est_plex */
+#define p4est_get_plex_data             p8est_get_plex_data
+
+/* functions in p4est_connrefine */
+#define p4est_connectivity_refine       p8est_connectivity_refine
 
 #endif /* !P4EST_TO_P8EST_H */

@@ -132,7 +132,7 @@ test_pertree (p4est_t * p4est, const p4est_gloidx_t * prev_pertree,
 }
 
 static void
-test_partition_circle (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
+test_partition_circle (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
                        p4est_gloidx_t * pertree1, p4est_gloidx_t * pertree2)
 {
   int                 i, j;
@@ -209,7 +209,7 @@ test_partition_circle (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
 
   /* Uniform partition */
   P4EST_GLOBAL_INFO ("Third circle partition\n");
-  p4est_partition (p4est, NULL);
+  p4est_partition (p4est, 0, NULL);
   test_pertree (p4est, pertree1, pertree2);
   crc2 = p4est_checksum (p4est);
   SC_CHECK_ABORT (crc1 == crc2, "Third checksum mismatch");
@@ -226,7 +226,7 @@ main (int argc, char **argv)
   int                 rank;
   int                 num_procs;
   int                 mpiret;
-  MPI_Comm            mpicomm;
+  sc_MPI_Comm         mpicomm;
   p4est_t            *p4est, *copy;
   p4est_connectivity_t *connectivity;
   int                 i;
@@ -241,10 +241,10 @@ main (int argc, char **argv)
   int64_t             sum;
   unsigned            crc;
 
-  mpiret = MPI_Init (&argc, &argv);
+  mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpicomm = MPI_COMM_WORLD;
-  mpiret = MPI_Comm_rank (mpicomm, &rank);
+  mpicomm = sc_MPI_COMM_WORLD;
+  mpiret = sc_MPI_Comm_rank (mpicomm, &rank);
   SC_CHECK_MPI (mpiret);
 
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
@@ -312,7 +312,7 @@ main (int argc, char **argv)
   }
 
   /* do a weighted partition with uniform weights */
-  p4est_partition (p4est, weight_one);
+  p4est_partition (p4est, 0, weight_one);
   test_pertree (p4est, pertree1, pertree2);
   SC_CHECK_ABORT (crc == p4est_checksum (p4est),
                   "bad checksum after uniformly weighted partition");
@@ -324,7 +324,7 @@ main (int argc, char **argv)
   /* do a weighted partition with many zero weights */
   weight_counter = 0;
   weight_index = (rank == 1) ? 1342 : 0;
-  p4est_partition (copy, weight_once);
+  p4est_partition (copy, 0, weight_once);
   test_pertree (copy, pertree1, pertree2);
   SC_CHECK_ABORT (crc == p4est_checksum (copy),
                   "bad checksum after unevenly weighted partition 1");
@@ -332,7 +332,7 @@ main (int argc, char **argv)
   /* do a weighted partition with many zero weights */
   weight_counter = 0;
   weight_index = 0;
-  p4est_partition (copy, weight_once);
+  p4est_partition (copy, 0, weight_once);
   test_pertree (copy, pertree1, pertree2);
   SC_CHECK_ABORT (crc == p4est_checksum (copy),
                   "bad checksum after unevenly weighted partition 2");
@@ -345,7 +345,7 @@ main (int argc, char **argv)
   weight_counter = 0;
   weight_index =
     (rank == num_procs - 1) ? ((int) copy->local_num_quadrants - 1) : 0;
-  p4est_partition (copy, weight_once);
+  p4est_partition (copy, 0, weight_once);
   test_pertree (copy, pertree1, pertree2);
   SC_CHECK_ABORT (crc == p4est_checksum (copy),
                   "bad checksum after unevenly weighted partition 3");
@@ -375,7 +375,7 @@ main (int argc, char **argv)
   p4est_connectivity_destroy (connectivity);
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;

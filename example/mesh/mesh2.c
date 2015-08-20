@@ -34,10 +34,12 @@
 
 #ifndef P4_TO_P8
 #include <p4est_bits.h>
+#include <p4est_extended.h>
 #include <p4est_mesh.h>
 #include <p4est_vtk.h>
 #else
 #include <p8est_bits.h>
+#include <p8est_extended.h>
 #include <p8est_mesh.h>
 #include <p8est_vtk.h>
 #endif
@@ -52,6 +54,8 @@ typedef enum
   P4EST_CONFIG_STAR,
   P4EST_CONFIG_PERIODIC,
   P4EST_CONFIG_ROTWRAP,
+  P4EST_CONFIG_CUBED,
+  P4EST_CONFIG_DISK
 #else
   P8EST_CONFIG_UNIT,
   P8EST_CONFIG_PERIODIC,
@@ -60,20 +64,20 @@ typedef enum
   P8EST_CONFIG_TWOWRAP,
   P8EST_CONFIG_ROTCUBES,
   P8EST_CONFIG_SHELL,
-  P8EST_CONFIG_SPHERE,
+  P8EST_CONFIG_SPHERE
 #endif
 }
 simple_config_t;
 
 typedef struct
 {
-  p4est_topidx_t      a;
+  p4est_quadrant_t    quad;
 }
 user_data_t;
 
 typedef struct
 {
-  MPI_Comm            mpicomm;
+  sc_MPI_Comm         mpicomm;
   int                 mpisize;
   int                 mpirank;
 }
@@ -87,7 +91,8 @@ init_fn (p4est_t * p4est, p4est_topidx_t which_tree,
 {
   user_data_t        *data = (user_data_t *) quadrant->p.user_data;
 
-  data->a = which_tree;
+  data->quad = *quadrant;
+  data->quad.p.which_tree = which_tree;
 }
 
 static int
@@ -124,18 +129,84 @@ refine_normal (p4est_t * p4est, p4est_topidx_t which_tree,
   return 1;
 }
 
+#if 0
+
+static void
+hack_test (mpi_context_t * mpi, p4est_connectivity_t * connectivity)
+{
+  int                 i;
+  int8_t              cc;
+  p4est_topidx_t      tt;
+  p4est_locidx_t      lnq, lng, lnc, lnco;
+  p4est_locidx_t      li, qtc;
+  p4est_locidx_t      co0, co1, coi, cq;
+  p4est_t            *p4est;
+  p4est_ghost_t      *ghost;
+  p4est_mesh_t       *mesh;
+
+  p4est = p4est_new_ext (mpi->mpicomm, connectivity, 0,
+                         refine_level, 1, 0, NULL, NULL);
+  p4est_vtk_write_file (p4est, NULL, "mesh_hack");
+
+  ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
+  mesh = p4est_mesh_new_ext (p4est, ghost, 1, 1, P4EST_CONNECT_FULL);
+
+  lnq = mesh->local_num_quadrants;
+  lng = mesh->ghost_num_quadrants;
+  lnco = lnq + lng;
+  lnc = mesh->local_num_corners;
+  P4EST_LDEBUGF ("Local quads %lld corners %lld array %lld\n",
+                 (long long) lnq, (long long) lnc,
+                 (long long) mesh->corner_offset->elem_count);
+  for (li = 0; li < lnq; ++li) {
+    tt = mesh->quad_to_tree[li];
+    if (tt >= 2) {
+      /* break; */
+    }
+    for (i = 0; i < P4EST_CHILDREN; ++i) {
+      qtc = mesh->quad_to_corner[P4EST_CHILDREN * li + i];
+      if (qtc >= lnco) {
+        P4EST_LDEBUGF ("Quad %lld tree %lld Corner %d is %lld\n",
+                       (long long) li, (long long) tt, i, (long long) qtc);
+        if (qtc >= lnco) {
+          qtc -= lnco;
+          co0 = *(p4est_locidx_t *) sc_array_index (mesh->corner_offset, qtc);
+          co1 =
+            *(p4est_locidx_t *) sc_array_index (mesh->corner_offset, qtc + 1);
+          for (coi = co0; coi < co1; ++coi) {
+            cq = *(p4est_locidx_t *) sc_array_index (mesh->corner_quad, coi);
+            cc = *(int8_t *) sc_array_index (mesh->corner_corner, coi);
+            P4EST_LDEBUGF ("   Part %d quad %lld corner %d\n",
+                           (int) (coi - co0), (long long) cq, (int) cc);
+          }
+        }
+      }
+    }
+  }
+
+  p4est_mesh_destroy (mesh);
+  p4est_ghost_destroy (ghost);
+  p4est_destroy (p4est);
+}
+
+#endif
+
 static void
 test_mesh (p4est_t * p4est, p4est_ghost_t * ghost, p4est_mesh_t * mesh,
-           int uniform)
+           int compute_tree_index, int compute_level_lists,
+           p4est_connect_type_t mesh_btype,
+           user_data_t * ghost_data, int uniform)
 {
   const int           HF = P4EST_HALF * P4EST_FACES;
+  size_t              i;
+  int                 level;
   int                 f, nf;
   int                 c;
   int                 nface;
   int                 nrank;
   p4est_topidx_t      which_tree;
   p4est_locidx_t      K, kl;
-  p4est_locidx_t      ql, QpG;
+  p4est_locidx_t      ql, QpG, lnC;
   p4est_locidx_t      qlid, qumid, quadrant_id, which_quad;
   p4est_mesh_face_neighbor_t mfn, mfn2;
   p4est_quadrant_t   *q;
@@ -144,20 +215,32 @@ test_mesh (p4est_t * p4est, p4est_ghost_t * ghost, p4est_mesh_t * mesh,
   K = mesh->local_num_quadrants;
   P4EST_ASSERT (K == p4est->local_num_quadrants);
   QpG = mesh->local_num_quadrants + mesh->ghost_num_quadrants;
+  lnC = mesh->local_num_corners;
+  P4EST_ASSERT (lnC >= 0);
+
+  P4EST_ASSERT (compute_tree_index == (mesh->quad_to_tree != NULL));
+  P4EST_ASSERT (compute_level_lists == (mesh->quad_level != NULL));
+  P4EST_ASSERT ((mesh_btype == P4EST_CONNECT_CORNER) ==
+                (mesh->quad_to_corner != NULL));
 
   /* TODO: test the mesh relations in more depth */
+  tree = NULL;
   for (kl = 0; kl < K; ++kl) {
-    tree = p4est_tree_array_index (p4est->trees, mesh->quad_to_tree[kl]);
-    SC_CHECK_ABORTF (tree->quadrants_offset <= kl && kl <
-                     tree->quadrants_offset +
-                     (p4est_locidx_t) tree->quadrants.elem_count,
-                     "Tree index mismatch %lld", (long long) kl);
+    if (compute_tree_index) {
+      tree = p4est_tree_array_index (p4est->trees, mesh->quad_to_tree[kl]);
+      SC_CHECK_ABORTF (tree->quadrants_offset <= kl && kl <
+                       tree->quadrants_offset +
+                       (p4est_locidx_t) tree->quadrants.elem_count,
+                       "Tree index mismatch %lld", (long long) kl);
+    }
 
-    for (c = 0; c < P4EST_CHILDREN; ++c) {
-      qlid = mesh->quad_to_corner[P4EST_CHILDREN * kl + c];
-      SC_CHECK_ABORTF (qlid >= -2
-                       && qlid < QpG, "quad %lld corner %d mismatch",
-                       (long long) kl, c);
+    if (mesh_btype == P4EST_CONNECT_CORNER) {
+      for (c = 0; c < P4EST_CHILDREN; ++c) {
+        qlid = mesh->quad_to_corner[P4EST_CHILDREN * kl + c];
+        SC_CHECK_ABORTF (qlid >= -2
+                         && qlid < QpG + lnC, "quad %lld corner %d mismatch",
+                         (long long) kl, c);
+      }
     }
     for (f = 0; f < P4EST_FACES; ++f) {
       ql = mesh->quad_to_quad[P4EST_FACES * kl + f];
@@ -175,6 +258,29 @@ test_mesh (p4est_t * p4est, p4est_ghost_t * ghost, p4est_mesh_t * mesh,
     }
   }
 
+  /* Test the level lists */
+  if (compute_tree_index && compute_level_lists) {
+    for (level = 0; level < P4EST_QMAXLEVEL; ++level) {
+      for (i = 0; i < mesh->quad_level[level].elem_count; ++i) {
+        /* get the local quadrant id */
+        quadrant_id =
+          *(p4est_locidx_t *) sc_array_index (&mesh->quad_level[level], i);
+
+        /* get the tree it belongs to */
+        kl = mesh->quad_to_tree[quadrant_id];
+        tree = p4est_tree_array_index (p4est->trees, kl);
+
+        /* and finally, get the actual quadrant from the tree quadrant list */
+        quadrant_id -= tree->quadrants_offset;
+        q =
+          p4est_quadrant_array_index (&tree->quadrants, (size_t) quadrant_id);
+
+        SC_CHECK_ABORTF (q->level == level,
+                         "quad %d level %d mismatch", quadrant_id, level);
+      }
+    }
+  }
+
   /* Test face neighbor iterator */
   for (qumid = 0; qumid < mesh->local_num_quadrants; ++qumid) {
     which_tree = -1;
@@ -186,13 +292,22 @@ test_mesh (p4est_t * p4est, p4est_ghost_t * ghost, p4est_mesh_t * mesh,
     P4EST_ASSERT (mfn2.quadrant_id == quadrant_id);
     while ((q = p4est_mesh_face_neighbor_next (&mfn, &which_tree, &which_quad,
                                                &nface, &nrank)) != NULL) {
+#ifdef P4EST_ENABLE_DEBUG
+      user_data_t        *data;
+
+      data = (user_data_t *) p4est_mesh_face_neighbor_data (&mfn, ghost_data);
+
+      P4EST_ASSERT (p4est_quadrant_is_equal (q, &(data->quad)));
+      P4EST_ASSERT (data->quad.p.which_tree == which_tree);
+#endif
     }
   }
 }
 
 static void
 mesh_run (mpi_context_t * mpi, p4est_connectivity_t * connectivity,
-          int uniform, p4est_connect_type_t mesh_btype)
+          int uniform, int compute_tree_index, int compute_level_lists,
+          p4est_connect_type_t mesh_btype)
 {
   int                 mpiret;
   unsigned            crc;
@@ -200,6 +315,7 @@ mesh_run (mpi_context_t * mpi, p4est_connectivity_t * connectivity,
   p4est_t            *p4est;
   p4est_ghost_t      *ghost;
   p4est_mesh_t       *mesh;
+  user_data_t        *ghost_data;
 
   p4est = p4est_new (mpi->mpicomm, connectivity,
                      sizeof (user_data_t), init_fn, NULL);
@@ -221,7 +337,7 @@ mesh_run (mpi_context_t * mpi, p4est_connectivity_t * connectivity,
     p4est_vtk_write_file (p4est, NULL, P4EST_STRING "_mesh_balanced");
 
   /* partition */
-  p4est_partition (p4est, NULL);
+  p4est_partition (p4est, 0, NULL);
   if (!uniform) {
     p4est_vtk_write_file (p4est, NULL, P4EST_STRING "_mesh_partition");
   }
@@ -233,16 +349,22 @@ mesh_run (mpi_context_t * mpi, p4est_connectivity_t * connectivity,
 
   /* create ghost layer and mesh */
   ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
-  mesh = p4est_mesh_new (p4est, ghost, mesh_btype);
-  test_mesh (p4est, ghost, mesh, uniform);
+  ghost_data = P4EST_ALLOC (user_data_t, ghost->ghosts.elem_count);
+  p4est_ghost_exchange_data (p4est, ghost, ghost_data);
+  mesh = p4est_mesh_new_ext (p4est, ghost,
+                             compute_tree_index, compute_level_lists,
+                             mesh_btype);
+  test_mesh (p4est, ghost, mesh,
+             compute_tree_index, compute_level_lists, mesh_btype,
+             ghost_data, uniform);
 
   /* compute memory used */
   local_used[0] = (long) p4est_connectivity_memory_used (p4est->connectivity);
   local_used[1] = (long) p4est_memory_used (p4est);
   local_used[2] = (long) p4est_ghost_memory_used (ghost);
   local_used[3] = (long) p4est_mesh_memory_used (mesh);
-  mpiret = MPI_Allreduce (local_used, global_used, 4, MPI_LONG, MPI_SUM,
-                          mpi->mpicomm);
+  mpiret = sc_MPI_Allreduce (local_used, global_used, 4, sc_MPI_LONG,
+                             sc_MPI_SUM, mpi->mpicomm);
   SC_CHECK_MPI (mpiret);
   P4EST_GLOBAL_PRODUCTIONF ("Total %s memory used %ld %ld %ld %ld\n",
                             uniform ? "uniform" : "adapted",
@@ -250,6 +372,7 @@ mesh_run (mpi_context_t * mpi, p4est_connectivity_t * connectivity,
                             global_used[2], global_used[3]);
 
   /* destroy ghost layer and mesh */
+  P4EST_FREE (ghost_data);
   p4est_mesh_destroy (mesh);
   p4est_ghost_destroy (ghost);
 
@@ -268,12 +391,12 @@ main (int argc, char **argv)
   simple_config_t     config;
 
   /* initialize MPI and p4est internals */
-  mpiret = MPI_Init (&argc, &argv);
+  mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpi->mpicomm = MPI_COMM_WORLD;
-  mpiret = MPI_Comm_size (mpi->mpicomm, &mpi->mpisize);
+  mpi->mpicomm = sc_MPI_COMM_WORLD;
+  mpiret = sc_MPI_Comm_size (mpi->mpicomm, &mpi->mpisize);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpi->mpicomm, &mpi->mpirank);
+  mpiret = sc_MPI_Comm_rank (mpi->mpicomm, &mpi->mpirank);
   SC_CHECK_MPI (mpiret);
 
   sc_init (mpi->mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
@@ -283,7 +406,7 @@ main (int argc, char **argv)
   usage =
     "Arguments: <configuration> <level>\n   Configuration can be any of\n"
 #ifndef P4_TO_P8
-    "      unit|three|moebius|star|periodic|rotwrap\n"
+    "      unit|three|moebius|star|periodic|rotwrap|cubed|disk\n"
 #else
     "      unit|periodic|rotwrap|twocubes|twowrap|rotcubes|shell|sphere\n"
 #endif
@@ -316,6 +439,12 @@ main (int argc, char **argv)
     }
     else if (!strcmp (argv[1], "rotwrap")) {
       config = P4EST_CONFIG_ROTWRAP;
+    }
+    else if (!strcmp (argv[1], "cubed")) {
+      config = P4EST_CONFIG_CUBED;
+    }
+    else if (!strcmp (argv[1], "disk")) {
+      config = P4EST_CONFIG_DISK;
     }
 #else
     else if (!strcmp (argv[1], "periodic")) {
@@ -371,6 +500,12 @@ main (int argc, char **argv)
   else if (config == P4EST_CONFIG_ROTWRAP) {
     connectivity = p4est_connectivity_new_rotwrap ();
   }
+  else if (config == P4EST_CONFIG_CUBED) {
+    connectivity = p4est_connectivity_new_cubed ();
+  }
+  else if (config == P4EST_CONFIG_DISK) {
+    connectivity = p4est_connectivity_new_disk ();
+  }
 #else
   else if (config == P8EST_CONFIG_PERIODIC) {
     connectivity = p8est_connectivity_new_periodic ();
@@ -402,16 +537,22 @@ main (int argc, char **argv)
 #endif
   }
 
+#if 0
+  /* hack test */
+  hack_test (mpi, connectivity);
+#else
   /* run mesh tests */
-  mesh_run (mpi, connectivity, 1, P4EST_CONNECT_FULL);
-  mesh_run (mpi, connectivity, 0, P4EST_CONNECT_FULL);
-  mesh_run (mpi, connectivity, 0, P4EST_CONNECT_FACE);
+  mesh_run (mpi, connectivity, 1, 0, 1, P4EST_CONNECT_FULL);
+  mesh_run (mpi, connectivity, 0, 1, 0, P4EST_CONNECT_FULL);
+  mesh_run (mpi, connectivity, 0, 0, 0, P4EST_CONNECT_FACE);
+  mesh_run (mpi, connectivity, 1, 1, 1, P4EST_CONNECT_FACE);
+#endif
 
   /* clean up and exit */
   p4est_connectivity_destroy (connectivity);
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;

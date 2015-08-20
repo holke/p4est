@@ -30,7 +30,8 @@ SC_EXTERN_C_BEGIN;
 
 typedef enum
 {
-  P8EST_COMM_COUNT_PERTREE = 1,
+  P8EST_COMM_TAG_FIRST = SC_TAG_FIRST,
+  P8EST_COMM_COUNT_PERTREE = SC_TAG_LAST,
   P8EST_COMM_BALANCE_FIRST_COUNT,
   P8EST_COMM_BALANCE_FIRST_LOAD,
   P8EST_COMM_BALANCE_SECOND_COUNT,
@@ -44,13 +45,17 @@ typedef enum
   P8EST_COMM_GHOST_EXCHANGE,
   P8EST_COMM_GHOST_EXPAND_COUNT,
   P8EST_COMM_GHOST_EXPAND_LOAD,
+  P8EST_COMM_GHOST_SUPPORT_COUNT,
+  P8EST_COMM_GHOST_SUPPORT_LOAD,
+  P8EST_COMM_GHOST_CHECKSUM,
   P8EST_COMM_NODES_QUERY,
   P8EST_COMM_NODES_REPLY,
   P8EST_COMM_SAVE,
   P8EST_COMM_LNODES_TEST,
   P8EST_COMM_LNODES_PASS,
   P8EST_COMM_LNODES_OWNED,
-  P8EST_COMM_LNODES_ALL
+  P8EST_COMM_LNODES_ALL,
+  P8EST_COMM_TAG_LAST
 }
 p8est_comm_tag_t;
 
@@ -135,11 +140,11 @@ int                 p8est_comm_neighborhood_owned (p8est_t * p8est,
 /** Evaluates true/false of a flag among processors.
  * \param [in] p8est        The MPI communicator of this p8est will be used.
  * \param [in] flag         The variable to communicate.
- * \param [in] operation    Either MPI_BAND or MPI_BOR (not used bitwise).
+ * \param [in] operation    Either sc_MPI_BAND or sc_MPI_BOR (not used bitwise).
  * \return          Returns the logical AND resp. OR of all processors' flags.
  */
 int                 p8est_comm_sync_flag (p8est_t * p8est,
-                                          int flag, MPI_Op operation);
+                                          int flag, sc_MPI_Op operation);
 
 /** Compute a parallel checksum out of local checksums.
  * \param [in] p8est       The MPI information of this p8est will be used.

@@ -54,7 +54,7 @@ typedef enum
   P4EST_CONFIG_CUBED,
   P4EST_CONFIG_DISK,
   P4EST_CONFIG_PERIODIC,
-  P4EST_CONFIG_ROTWRAP,
+  P4EST_CONFIG_ROTWRAP
 }
 simple_config_t;
 
@@ -75,7 +75,7 @@ user_data_t;
 
 typedef struct
 {
-  MPI_Comm            mpicomm;
+  sc_MPI_Comm         mpicomm;
   int                 mpisize;
   int                 mpirank;
 }
@@ -208,12 +208,12 @@ main (int argc, char **argv)
   const simple_regression_t *r;
 
   /* initialize MPI and p4est internals */
-  mpiret = MPI_Init (&argc, &argv);
+  mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpi->mpicomm = MPI_COMM_WORLD;
-  mpiret = MPI_Comm_size (mpi->mpicomm, &mpi->mpisize);
+  mpi->mpicomm = sc_MPI_COMM_WORLD;
+  mpiret = sc_MPI_Comm_size (mpi->mpicomm, &mpi->mpisize);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpi->mpicomm, &mpi->mpirank);
+  mpiret = sc_MPI_Comm_rank (mpi->mpicomm, &mpi->mpirank);
   SC_CHECK_MPI (mpiret);
 
   sc_init (mpi->mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
@@ -334,10 +334,10 @@ main (int argc, char **argv)
   crc = p4est_checksum (p4est);
 
   /* partition */
-  p4est_partition (p4est, NULL);
+  p4est_partition (p4est, 0, NULL);
   p4est_vtk_write_file (p4est, NULL, "simple2_partition");
 
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
   /* rebalance should not change checksum */
   p4est_balance (p4est, P4EST_CONNECT_FULL, init_fn);
   P4EST_ASSERT (p4est_checksum (p4est) == crc);
@@ -363,7 +363,7 @@ main (int argc, char **argv)
   /* clean up and exit */
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;

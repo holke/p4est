@@ -21,36 +21,40 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
+/** \file p4est_base.h
+ *
+ * General support types and functions
+ */
+
 #ifndef P4EST_BASE_H
 #define P4EST_BASE_H
 
-/* include p4est config header */
-
+/* include config headers */
 #include <p4est_config.h>
-
-/* indirectly also include sc.h and sc_config.h */
-
-#include <sc_containers.h>
-#define _p4est_const _sc_const
-
+#include <sc_config.h>
 #if \
-  (defined (P4EST_MPI) && !defined (SC_MPI)) || \
-  (!defined (P4EST_MPI) && defined (SC_MPI))
+  (defined (P4EST_ENABLE_MPI) && !defined (SC_ENABLE_MPI)) || \
+  (!defined (P4EST_ENABLE_MPI) && defined (SC_ENABLE_MPI))
 #error "MPI configured differently in p4est and libsc"
 #endif
 #if \
-  (defined (P4EST_MPIIO) && !defined (SC_MPIIO)) || \
-  (!defined (P4EST_MPIIO) && defined (SC_MPIIO))
+  (defined (P4EST_ENABLE_MPIIO) && !defined (SC_ENABLE_MPIIO)) || \
+  (!defined (P4EST_ENABLE_MPIIO) && defined (SC_ENABLE_MPIIO))
 #error "MPI I/O configured differently in p4est and libsc"
 #endif
+
+/* indirectly also include sc.h */
+#include <sc_containers.h>
+#define _p4est_const _sc_const
 
 SC_EXTERN_C_BEGIN;
 
 /** Typedef for quadrant coordinates. */
 typedef int32_t     p4est_qcoord_t;
 #define p4est_qcoord_compare sc_int32_compare
-#define P4EST_MPI_QCOORD MPI_INT
+#define P4EST_MPI_QCOORD sc_MPI_INT
 #define P4EST_VTK_QCOORD "Int32"
+#define P4EST_F90_QCOORD INTEGER(KIND=C_INT32_T)
 #define P4EST_QCOORD_MIN INT32_MIN
 #define P4EST_QCOORD_MAX INT32_MAX
 #define P4EST_QCOORD_1   ((p4est_qcoord_t) 1)
@@ -58,8 +62,9 @@ typedef int32_t     p4est_qcoord_t;
 /** Typedef for counting topological entities (trees, tree vertices). */
 typedef int32_t     p4est_topidx_t;
 #define p4est_topidx_compare sc_int32_compare
-#define P4EST_MPI_TOPIDX MPI_INT
+#define P4EST_MPI_TOPIDX sc_MPI_INT
 #define P4EST_VTK_TOPIDX "Int32"
+#define P4EST_F90_TOPIDX INTEGER(KIND=C_INT32_T)
 #define P4EST_TOPIDX_MIN INT32_MIN
 #define P4EST_TOPIDX_MAX INT32_MAX
 #define P4EST_TOPIDX_FITS_32 1
@@ -68,8 +73,9 @@ typedef int32_t     p4est_topidx_t;
 /** Typedef for processor-local indexing of quadrants and nodes. */
 typedef int32_t     p4est_locidx_t;
 #define p4est_locidx_compare sc_int32_compare
-#define P4EST_MPI_LOCIDX MPI_INT
+#define P4EST_MPI_LOCIDX sc_MPI_INT
 #define P4EST_VTK_LOCIDX "Int32"
+#define P4EST_F90_LOCIDX INTEGER(KIND=C_INT32_T)
 #define P4EST_LOCIDX_MIN INT32_MIN
 #define P4EST_LOCIDX_MAX INT32_MAX
 #define P4EST_LOCIDX_1   ((p4est_locidx_t) 1)
@@ -77,14 +83,15 @@ typedef int32_t     p4est_locidx_t;
 /** Typedef for globally unique indexing of quadrants. */
 typedef int64_t     p4est_gloidx_t;
 #define p4est_gloidx_compare sc_int64_compare
-#define P4EST_MPI_GLOIDX MPI_LONG_LONG_INT
+#define P4EST_MPI_GLOIDX sc_MPI_LONG_LONG_INT
 #define P4EST_VTK_GLOIDX "Int64"
+#define P4EST_F90_GLOIDX INTEGER(KIND=C_INT64_T)
 #define P4EST_GLOIDX_MIN INT64_MIN
 #define P4EST_GLOIDX_MAX INT64_MAX
 #define P4EST_GLOIDX_1   ((p4est_gloidx_t) 1)
 
 /* some error checking possibly specific to p4est */
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
 #define P4EST_ASSERT(c) SC_CHECK_ABORT ((c), "Assertion '" #c "'")
 #define P4EST_EXECUTE_ASSERT_FALSE(expression)                          \
   do { int _p4est_i = (int) (expression);                               \
@@ -94,22 +101,30 @@ typedef int64_t     p4est_gloidx_t;
   do { int _p4est_i = (int) (expression);                               \
        SC_CHECK_ABORT (_p4est_i, "Expected true: '" #expression "'");   \
   } while (0)
+#define P4EST_DEBUG_EXECUTE(expression)                 \
+  do { (void) (expression); } while (0)
 #else
 #define P4EST_ASSERT(c) SC_NOOP ()
-#define P4EST_EXECUTE_ASSERT_FALSE(expression) \
+#define P4EST_EXECUTE_ASSERT_FALSE(expression)          \
   do { (void) (expression); } while (0)
-#define P4EST_EXECUTE_ASSERT_TRUE(expression) \
+#define P4EST_EXECUTE_ASSERT_TRUE(expression)           \
   do { (void) (expression); } while (0)
+#define P4EST_DEBUG_EXECUTE(expression) SC_NOOP ()
 #endif
 
 /* macros for memory allocation, will abort if out of memory */
+/** allocate a \a t-array with \a n elements */
 #define P4EST_ALLOC(t,n)          (t *) sc_malloc (p4est_package_id,    \
                                                    (n) * sizeof(t))
+/** allocate a \a t-array with \a n elements and zero */
 #define P4EST_ALLOC_ZERO(t,n)     (t *) sc_calloc (p4est_package_id,    \
                                                    (size_t) (n), sizeof(t))
+/** reallocate the \a t-array \a p with \a n elements */
 #define P4EST_REALLOC(p,t,n)      (t *) sc_realloc (p4est_package_id,   \
                                                     (p), (n) * sizeof(t))
+/** duplicate a string */
 #define P4EST_STRDUP(s)                 sc_strdup (p4est_package_id, (s))
+/** free an allocated array */
 #define P4EST_FREE(p)                   sc_free (p4est_package_id, (p))
 
 /* log helper macros */
@@ -221,10 +236,24 @@ void                P4EST_LERRORF (const char *fmt, ...)
 #define P4EST_NOTICEF           P4EST_STATISTICSF
 
 /* extern declarations */
+/** the libsc package id for p4est (set in p4est_init()) */
 extern int          p4est_package_id;
+
+static inline void
+p4est_log_indent_push ()
+{
+  sc_log_indent_push_count (p4est_package_id, 1);
+}
+
+static inline void
+p4est_log_indent_pop ()
+{
+  sc_log_indent_pop_count (p4est_package_id, 1);
+}
 
 /** Registers p4est with the SC Library and sets the logging behavior.
  * This function is optional.
+ * This function must only be called before additional threads are created.
  * If this function is not called or called with log_handler == NULL,
  * the default SC log handler will be used.
  * If this function is not called or called with log_threshold == SC_LP_DEFAULT,

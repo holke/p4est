@@ -21,6 +21,10 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
+#ifndef P4EST_BACKWARD_DEALII
+#define P4EST_BACKWARD_DEALII
+#endif
+
 #ifndef P4_TO_P8
 #include <p4est_bits.h>
 #include <p4est_extended.h>
@@ -32,7 +36,6 @@
 #include <p8est_extended.h>
 #include <p8est_ghost.h>
 #include <p8est_nodes.h>
-#include <p8est_trilinear.h>
 #include <p8est_vtk.h>
 #endif
 
@@ -41,6 +44,15 @@ static const int    refine_level = 5;
 #else
 static const int    refine_level = 4;
 #endif
+
+static p4est_balance_type_t
+check_backward_compatibility (void)
+{
+  p4est_balance_type_t b;
+
+  b = P4EST_CONNECT_FULL;
+  return b;
+}
 
 static int
 refine_fn (p4est_t * p4est, p4est_topidx_t which_tree,
@@ -83,7 +95,7 @@ coarsen_fn (p4est_t * p4est, p4est_topidx_t which_tree,
 }
 
 static void
-check_all (MPI_Comm mpicomm, p4est_connectivity_t * conn,
+check_all (sc_MPI_Comm mpicomm, p4est_connectivity_t * conn,
            const char *vtkname, unsigned crc_expected, unsigned gcrc_expected)
 {
   int                 mpiret;
@@ -93,9 +105,6 @@ check_all (MPI_Comm mpicomm, p4est_connectivity_t * conn,
   p4est_t            *p4est;
   p4est_nodes_t      *nodes;
   p4est_ghost_t      *ghost;
-#ifdef P4_TO_P8
-  trilinear_mesh_t   *mesh;
-#endif
 
   P4EST_GLOBAL_STATISTICSF ("Testing configuration %s\n", vtkname);
 
@@ -103,7 +112,7 @@ check_all (MPI_Comm mpicomm, p4est_connectivity_t * conn,
   p4est_refine (p4est, 1, refine_fn, NULL);
   p4est_coarsen (p4est, 1, coarsen_fn, NULL);
   p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
-  p4est_partition (p4est, NULL);
+  p4est_partition (p4est, 0, NULL);
   p4est_vtk_write_file (p4est, NULL, vtkname);
 
   crc_computed = p4est_checksum (p4est);
@@ -121,8 +130,8 @@ check_all (MPI_Comm mpicomm, p4est_connectivity_t * conn,
   lsize[0] = (long long) size_conn;
   lsize[1] = (long long) size_p4est;
   lsize[2] = (long long) size_ghost;
-  mpiret =
-    MPI_Reduce (lsize, gsize, 3, MPI_LONG_LONG_INT, MPI_SUM, 0, mpicomm);
+  mpiret = sc_MPI_Reduce (lsize, gsize, 3, sc_MPI_LONG_LONG_INT, sc_MPI_SUM,
+                          0, mpicomm);
   SC_CHECK_MPI (mpiret);
   P4EST_GLOBAL_INFOF ("Global byte sizes: %lld %lld %lld\n",
                       gsize[0], gsize[1], gsize[2]);
@@ -135,10 +144,6 @@ check_all (MPI_Comm mpicomm, p4est_connectivity_t * conn,
   }
 
   nodes = p4est_nodes_new (p4est, ghost);
-#ifdef P4_TO_P8
-  mesh = p8est_trilinear_mesh_new_from_nodes (p4est, nodes);
-  p8est_trilinear_mesh_destroy (mesh);
-#endif
   p4est_nodes_destroy (nodes);
   p4est_ghost_destroy (ghost);
 
@@ -149,20 +154,22 @@ check_all (MPI_Comm mpicomm, p4est_connectivity_t * conn,
 int
 main (int argc, char **argv)
 {
-  MPI_Comm            mpicomm;
+  sc_MPI_Comm         mpicomm;
   int                 mpiret;
   int                 size, rank;
 
-  mpiret = MPI_Init (&argc, &argv);
+  mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpicomm = MPI_COMM_WORLD;
-  mpiret = MPI_Comm_size (mpicomm, &size);
+  mpicomm = sc_MPI_COMM_WORLD;
+  mpiret = sc_MPI_Comm_size (mpicomm, &size);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpicomm, &rank);
+  mpiret = sc_MPI_Comm_rank (mpicomm, &rank);
   SC_CHECK_MPI (mpiret);
 
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
   p4est_init (NULL, SC_LP_DEFAULT);
+
+  (void) check_backward_compatibility ();
 
 #ifndef P4_TO_P8
   check_all (mpicomm, p4est_connectivity_new_unitsquare (),
@@ -198,7 +205,7 @@ main (int argc, char **argv)
   /* clean up and exit */
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;

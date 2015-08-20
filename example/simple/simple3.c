@@ -53,7 +53,7 @@ typedef enum
   P8EST_CONFIG_TWOWRAP,
   P8EST_CONFIG_ROTCUBES,
   P8EST_CONFIG_SHELL,
-  P8EST_CONFIG_SPHERE,
+  P8EST_CONFIG_SPHERE
 }
 simple_config_t;
 
@@ -74,7 +74,7 @@ user_data_t;
 
 typedef struct
 {
-  MPI_Comm            mpicomm;
+  sc_MPI_Comm         mpicomm;
   int                 mpisize;
   int                 mpirank;
 }
@@ -175,12 +175,12 @@ main (int argc, char **argv)
   const simple_regression_t *r;
 
   /* initialize MPI and p4est internals */
-  mpiret = MPI_Init (&argc, &argv);
+  mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpi->mpicomm = MPI_COMM_WORLD;
-  mpiret = MPI_Comm_size (mpi->mpicomm, &mpi->mpisize);
+  mpi->mpicomm = sc_MPI_COMM_WORLD;
+  mpiret = sc_MPI_Comm_size (mpi->mpicomm, &mpi->mpisize);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpi->mpicomm, &mpi->mpirank);
+  mpiret = sc_MPI_Comm_rank (mpi->mpicomm, &mpi->mpirank);
   SC_CHECK_MPI (mpiret);
 
   sc_init (mpi->mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
@@ -257,11 +257,11 @@ main (int argc, char **argv)
   }
   else if (config == P8EST_CONFIG_SHELL) {
     connectivity = p8est_connectivity_new_shell ();
-    geom = p8est_geometry_new_shell (1., .55);
+    geom = p8est_geometry_new_shell (connectivity, 1., .55);
   }
   else if (config == P8EST_CONFIG_SPHERE) {
     connectivity = p8est_connectivity_new_sphere ();
-    geom = p8est_geometry_new_sphere (1., 0.191728, 0.039856);
+    geom = p8est_geometry_new_sphere (connectivity, 1., 0.191728, 0.039856);
   }
   else {
     connectivity = p8est_connectivity_new_unitcube ();
@@ -291,12 +291,12 @@ main (int argc, char **argv)
   crc = p8est_checksum (p8est);
 
   /* partition */
-  p8est_partition (p8est, NULL);
+  p8est_partition (p8est, 0, NULL);
 #ifdef VTK_OUTPUT
   p8est_vtk_write_file (p8est, geom, "simple3_partition");
 #endif
 
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
   /* rebalance should not change checksum */
   p8est_balance (p8est, P8EST_CONNECT_FULL, init_fn);
   P4EST_ASSERT (p8est_checksum (p8est) == crc);
@@ -317,13 +317,15 @@ main (int argc, char **argv)
 
   /* destroy the p8est and its connectivity structure */
   p8est_destroy (p8est);
-  P4EST_FREE (geom);
+  if (geom != NULL) {
+    p8est_geometry_destroy (geom);
+  }
   p8est_connectivity_destroy (connectivity);
 
   /* clean up and exit */
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;

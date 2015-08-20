@@ -29,25 +29,71 @@
  * The API may change without notice.                               *
  ********************************************************************/
 
+/** \file p8est_extended.h
+ *
+ * Interface routines with extended capabilities.
+ *
+ * \ingroup p8est
+ */
+
 #ifndef P8EST_EXTENDED_H
 #define P8EST_EXTENDED_H
 
 #include <p8est.h>
+#include <p8est_mesh.h>
 #include <p8est_iterate.h>
 
 SC_EXTERN_C_BEGIN;
 
-/** Callback function prototype used by extended routines when the quadrants
- * of an existing, valid p8est are changed.  The callback allows the user to
- * make changes to newly initialized quadrants before the quadrants that they
- * replace are destroyed.
+/* Data pertaining to selecting, inspecting, and profiling algorithms.
+ * A pointer to this structure is hooked into the p8est main structure.
+ *
+ * TODO: Describe the purpose of various switches, counters, and timings.
+ *
+ * The balance_ranges and balance_notify* times are collected
+ * whenever an inspect structure is present in p8est.
+ */
+struct p8est_inspect
+{
+  /** Use sc_ranges to determine the asymmetric communication pattern.
+   * If \a use_balance_ranges is false (the default), sc_notify is used. */
+  int                 use_balance_ranges;
+  /** If true, call both sc_ranges and sc_notify and verify consistency.
+   * Which is actually used is still determined by \a use_balance_ranges. */
+  int                 use_balance_ranges_notify;
+  /** Verify sc_ranges and/or sc_notify as applicable. */
+  int                 use_balance_verify;
+  /** If positive and smaller than p8est_num ranges, overrides it */
+  int                 balance_max_ranges;
+  size_t              balance_A_count_in;
+  size_t              balance_A_count_out;
+  size_t              balance_comm_sent;
+  size_t              balance_comm_nzpeers;
+  size_t              balance_B_count_in;
+  size_t              balance_B_count_out;
+  size_t              balance_zero_sends[2], balance_zero_receives[2];
+  double              balance_A;
+  double              balance_comm;
+  double              balance_B;
+  double              balance_ranges;   /**< time spent in sc_ranges */
+  double              balance_notify;   /**< time spent in sc_notify */
+  /** time spent in sc_notify_allgather */
+  double              balance_notify_allgather;
+  int                 use_B;
+};
+
+/** Callback function prototype to replace one set of quadrants with another.
+ *
+ * This is used by extended routines when the quadrants of an existing, valid
+ * p8est are changed.  The callback allows the user to make changes to newly
+ * initialized quadrants before the quadrants that they replace are destroyed.
  *
  * \param [in] num_outgoing The number of outgoing quadrants.
  * \param [in] outgoing     The outgoing quadrants: after the callback, the
  *                          user_data, if \a p8est->data_size is nonzero,
  *                          will be destroyed.
  * \param [in] num_incoming The number of incoming quadrants.
- * \param [in/out] incoming The incoming quadrants: prior to the callback,
+ * \param [in,out] incoming The incoming quadrants: prior to the callback,
  *                          the user_data, if \a p8est->data_size is nonzero,
  *                          is allocated, and the p8est_init_t callback,
  *                          if it has been provided, will be called.
@@ -75,12 +121,30 @@ typedef void        (*p8est_replace_t) (p8est_t * p8est,
  *                              The latter is partition-specific so that
  *                              is usually not a good idea.
  */
-p8est_t            *p8est_new_ext (MPI_Comm mpicomm,
+p8est_t            *p8est_new_ext (sc_MPI_Comm mpicomm,
                                    p8est_connectivity_t * connectivity,
                                    p4est_locidx_t min_quadrants,
                                    int min_level, int fill_uniform,
                                    size_t data_size, p8est_init_t init_fn,
                                    void *user_pointer);
+
+/** Create a new mesh.
+ * \param [in] p8est                A forest that is fully 2:1 balanced.
+ * \param [in] ghost                The ghost layer created from the
+ *                                  provided p4est.
+ * \param [in] compute_tree_index   Boolean to decide whether to allocate and
+ *                                  compute the quad_to_tree list.
+ * \param [in] compute_level_lists  Boolean to decide whether to compute the
+ *                                  level lists in quad_level.
+ * \param [in] btype                Currently ignored, only face neighbors
+ *                                  are stored.
+ * \return                          A fully allocated mesh structure.
+ */
+p8est_mesh_t       *p8est_mesh_new_ext (p8est_t * p4est,
+                                        p8est_ghost_t * ghost,
+                                        int compute_tree_index,
+                                        int compute_level_lists,
+                                        p8est_connect_type_t btype);
 
 /** Refine a forest with a bounded refinement level and a replace option.
  * \param [in,out] p8est The forest is changed in place.
@@ -133,6 +197,17 @@ void                p8est_coarsen_ext (p8est_t * p8est, int coarsen_recursive,
                                        p8est_init_t init_fn,
                                        p8est_replace_t replace_fn);
 
+/** 2:1 balance the size differences of neighboring elements in a forest.
+ * \param [in,out] p8est  The p8est to be worked on.
+ * \param [in] btype      Balance type (face, edge, or corner/full).
+ *                        Corner balance is almost never required when
+ *                        discretizing a PDE; just causes smoother mesh grading.
+ * \param [in] init_fn    Callback function to initialize the user_data
+ *                        which is already allocated automatically.
+ * \param [in] replace_fn Callback function that allows the user to change
+ *                        incoming quadrants based on the quadrants they
+ *                        replace.
+ */
 void                p8est_balance_ext (p8est_t * p8est,
                                        p8est_connect_type_t btype,
                                        p8est_init_t init_fn,
@@ -215,11 +290,20 @@ void                p8est_save_ext (const char *filename, p8est_t * p8est,
  *                  argument.
  * \note            Aborts on file errors or invalid file contents.
  */
-p8est_t            *p8est_load_ext (const char *filename, MPI_Comm mpicomm,
+p8est_t            *p8est_load_ext (const char *filename, sc_MPI_Comm mpicomm,
                                     size_t data_size, int load_data,
                                     int autopartition, int broadcasthead,
                                     void *user_pointer,
                                     p8est_connectivity_t ** connectivity);
+
+/** The same as p8est_load_ext, but reading the connectivity/p8est from an
+ * open sc_io_source_t stream.
+ */
+p8est_t            *p8est_source_ext (sc_io_source_t * src,
+                                      sc_MPI_Comm mpicomm, size_t data_size,
+                                      int load_data, int autopartition,
+                                      int broadcasthead, void *user_pointer,
+                                      p8est_connectivity_t ** connectivity);
 
 SC_EXTERN_C_END;
 

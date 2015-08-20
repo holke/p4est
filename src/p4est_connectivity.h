@@ -21,6 +21,13 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
+/** \file p4est_connectivity.h
+ *
+ * The coarse topological description of the forest.
+ *
+ * \ingroup p4est
+ */
+
 #ifndef P4EST_CONNECTIVITY_H
 #define P4EST_CONNECTIVITY_H
 
@@ -33,18 +40,23 @@
 
 SC_EXTERN_C_BEGIN;
 
-/* spatial dimension */
+/** The spatial dimension */
 #define P4EST_DIM 2
+/** The number of faces of a quadrant */
 #define P4EST_FACES (2 * P4EST_DIM)
+/** The number of children of a quadrant
+ *
+ * also the nmber of corners */
 #define P4EST_CHILDREN 4
+/** The number of children/corners touching one face */
 #define P4EST_HALF (P4EST_CHILDREN / 2)
-/* size of insulation layer */
+/** The size of insulation layer */
 #define P4EST_INSUL 9
 
 /* size of face transformation encoding */
 #define P4EST_FTRANSFORM 9
 
-/* p4est identification string */
+/** p4est identification string */
 #define P4EST_STRING "p4est"
 
 /* Increase this number whenever the on-disk format for
@@ -53,7 +65,9 @@ SC_EXTERN_C_BEGIN;
  */
 #define P4EST_ONDISK_FORMAT 0x2000009
 
-/* Several functions involve relationships between neighboring trees and/or
+/** Characterize a type of adjacency.
+ *
+ * Several functions involve relationships between neighboring trees and/or
  * quadrants, and their behavior depends on how one defines adjacency:
  * 1) entities are adjacent if they share a face, or
  * 2) entities are adjacent if they share a face or corner.
@@ -65,10 +79,13 @@ typedef enum
   /* make sure to have different values 2D and 3D */
   P4EST_CONNECT_FACE = 21,
   P4EST_CONNECT_CORNER = 22,
-  P4EST_CONNECT_DEFAULT = P4EST_CONNECT_CORNER,
   P4EST_CONNECT_FULL = P4EST_CONNECT_CORNER
 }
 p4est_connect_type_t;
+
+#ifdef P4EST_BACKWARD_DEALII
+typedef p4est_connect_type_t p4est_balance_type_t;
+#endif
 
 /** Typedef for serialization method. */
 typedef enum
@@ -77,17 +94,6 @@ typedef enum
   P4EST_CONN_ENCODE_LAST        /**< Invalid entry to close the list. */
 }
 p4est_connectivity_encode_t;
-
-#ifndef P4EST_STRICT_API
-
-/** The following definitions are deprecated, do NOT use in new code. */
-#define P4EST_BALANCE_FACE    P4EST_CONNECT_FACE
-#define P4EST_BALANCE_CORNER  P4EST_CONNECT_CORNER
-#define P4EST_BALANCE_DEFAULT P4EST_CONNECT_DEFAULT
-#define P4EST_BALANCE_FULL    P4EST_CONNECT_FULL
-#define p4est_balance_type_t  p4est_connect_type_t
-
-#endif /* P4EST_STRICT_API */
 
 /** Convert the p4est_connect_type_t into a number.
  * \param [in] btype    The balance type to convert.
@@ -132,21 +138,33 @@ const char         *p4est_connect_type_string (p4est_connect_type_t btype);
  */
 typedef struct p4est_connectivity
 {
-  p4est_topidx_t      num_vertices;
-  p4est_topidx_t      num_trees;
-  p4est_topidx_t      num_corners;
+  p4est_topidx_t      num_vertices; /**< the number of vertices that define
+                                         the \a embedding of the forest (not
+                                         the topology) */
+  p4est_topidx_t      num_trees;    /**< the number of trees */
+  p4est_topidx_t      num_corners;  /**< the number of corners that help
+                                         define topology */
+  double             *vertices;     /**< an array of size
+                                         (3 * \a num_vertices) */
+  p4est_topidx_t     *tree_to_vertex; /**< embed each tree into \f$R^3\f$ for
+                                           e.g. visualization (see
+                                           p4est_vtk.h) */
 
-  double             *vertices;
-  p4est_topidx_t     *tree_to_vertex;
-  int8_t             *tree_to_attr;
+  size_t              tree_attr_bytes;  /**< bytes per tree in tree_to_attr */
+  char               *tree_to_attr;     /**< not touched by p4est */
 
-  p4est_topidx_t     *tree_to_tree;
-  int8_t             *tree_to_face;
+  p4est_topidx_t     *tree_to_tree; /**< (4 * \a num_trees) neighbors across
+                                         faces */
+  int8_t             *tree_to_face; /**< (4 * \a num_trees) face to
+                                         face+orientation (see description) */
 
-  p4est_topidx_t     *tree_to_corner;
-  p4est_topidx_t     *ctt_offset;
-  p4est_topidx_t     *corner_to_tree;
-  int8_t             *corner_to_corner;
+  p4est_topidx_t     *tree_to_corner; /**< (4 * \a num_trees) or NULL (see
+                                           description) */
+  p4est_topidx_t     *ctt_offset; /**< corner to offset in \a corner_to_tree
+                                       and \a corner_to_corner */
+  p4est_topidx_t     *corner_to_tree; /**< list of trees that meet at a corner */
+  int8_t             *corner_to_corner; /**< list of tree-corners that meet at
+                                             a corner */
 }
 p4est_connectivity_t;
 
@@ -186,6 +204,16 @@ extern const int    p4est_corner_face_corners[4][4];
 /** Store the faces for each child and corner, can be -1. */
 extern const int    p4est_child_corner_faces[4][4];
 
+/** Transform a corner across one of the adjacent faces into a neighbor tree.
+ * This version expects the neighbor face and orientation separately.
+ * \param [in] c    A corner number in 0..3.
+ * \param [in] f    A face number that touches the corner \a c.
+ * \param [in] nf   A neighbor face that is on the other side of \f.
+ * \param [in] o    The orientation between tree boundary faces \a f and \nf.
+ */
+int                 p4est_connectivity_face_neighbor_corner_orientation
+  (int c, int f, int nf, int o);
+
 /** Allocate a connectivity structure.
  * The attribute fields are initialized to NULL.
  * \param [in] num_vertices   Number of total vertices (i.e. geometric points).
@@ -221,6 +249,21 @@ p4est_connectivity_t *p4est_connectivity_new_copy (p4est_topidx_t
                                                    const p4est_topidx_t * ctt,
                                                    const int8_t * ctc);
 
+/** Broadcast a connectivity structure that exists only on one process to all.
+ *  On the other processors, it will be allocated using p4est_connectivity_new.
+ *  \param [in] conn_in For the root process the connectivity to be broadcast,
+ *                      for the other processes it must be NULL.
+ *  \param [in] root    The rank of the process that provides the connectivity.
+ *  \param [in] comm    The MPI communicator.
+ *  \return             For the root process this is a pointer to \a conn_in.
+ *                      Else, a pointer to a newly allocated connectivity
+ *                      structure with the same values as \a conn_in on the
+ *                      root process.
+ */
+p4est_connectivity_t *p4est_connectivity_bcast (p4est_connectivity_t *
+                                                conn_in, int root,
+                                                sc_MPI_Comm comm);
+
 /** Destroy a connectivity structure.  Also destroy all attributes.
  */
 void                p4est_connectivity_destroy (p4est_connectivity_t *
@@ -229,11 +272,11 @@ void                p4est_connectivity_destroy (p4est_connectivity_t *
 /** Allocate or free the attribute fields in a connectivity.
  * \param [in,out] conn         The conn->*_to_attr fields must either be NULL
  *                              or previously be allocated by this function.
- * \param [in] enable_tree_attr If false, tree_to_attr is freed (NULL is ok).
- *                              If true, it must be NULL and is allocated.
+ * \param [in] bytes_per_tree   If 0, tree_to_attr is freed (being NULL is ok).
+ *                              If positive, requested space is allocated.
  */
 void                p4est_connectivity_set_attr (p4est_connectivity_t * conn,
-                                                 int enable_tree_attr);
+                                                 size_t bytes_per_tree);
 
 /** Examine a connectivity structure.
  * \return          Returns true if structure is valid, false otherwise.
@@ -361,6 +404,18 @@ p4est_connectivity_t *p4est_connectivity_new_brick (int mi, int ni,
  */
 p4est_connectivity_t *p4est_connectivity_new_byname (const char *name);
 
+/** Uniformly refine a connectivity.
+ * This is useful if you would like to uniformly refine by something other
+ * than a power of 2.
+ *
+ * \param [in] conn         a valid connectivity
+ * \param [in] num_per_edge the number of new trees in each direction
+ *
+ * \return a refined connectivity.
+ */
+p4est_connectivity_t *p4est_connectivity_refine (p4est_connectivity_t * conn,
+                                                 int num_per_edge);
+
 /** Fill an array with the axis combination of a face neighbor transform.
  * \param [in]  iface       The number of the originating face.
  * \param [in]  nface       Encoded as nface = r * 4 + nf, where nf = 0..3 is
@@ -420,6 +475,13 @@ void                p4est_find_corner_transform (p4est_connectivity_t *
  */
 void                p4est_connectivity_complete (p4est_connectivity_t * conn);
 
+/** Removes corner information of a connectivity
+ *  such that enough information is left to run p4est_connectivity_complete successfully.
+ *  The reduced connectivity still passes p4est_connectivity_is_valid.
+ * \param [in,out] conn     The connectivity to be reduced.
+ */
+void                p4est_connectivity_reduce (p4est_connectivity_t * conn);
+
 /** p4est_connectivity_permute
  * Given a permutation \a perm of the trees in a connectivity \a conn,
  * permute the trees of \a conn in place and update \a conn to match.
@@ -437,7 +499,7 @@ void                p4est_connectivity_complete (p4est_connectivity_t * conn);
 void                p4est_connectivity_permute (p4est_connectivity_t * conn,
                                                 sc_array_t * perm,
                                                 int is_current_to_new);
-#ifdef P4EST_METIS
+#ifdef P4EST_WITH_METIS
 
 /** p4est_connectivity_reorder
  * This function takes a connectivity \a conn and a parameter \a k,
@@ -465,7 +527,7 @@ void                p4est_connectivity_reorder (MPI_Comm comm, int k,
                                                 p4est_connectivity_t * conn,
                                                 p4est_connect_type_t ctype);
 
-#endif /* P4EST_METIS */
+#endif /* P4EST_WITH_METIS */
 
 /** p4est_connectivity_join_faces
  * This function takes an existing valid connectivity \a conn and modifies it
@@ -517,6 +579,169 @@ p4est_corner_array_index (sc_array_t * array, size_t it)
     (p4est_corner_transform_t *) (array->array +
                                   sizeof (p4est_corner_transform_t) * it);
 }
+
+/** Read an ABAQUS input file from a file stream.
+ *
+ * This utility function reads a basic ABAQUS file supporting element type with
+ * the prefix C2D4, CPS4, and S4 in 2D and of type C3D8 reading them as
+ * bilinear quadrilateral and trilinear hexahedral trees respectively.
+ *
+ * A basic 2D mesh is given below.  The \c *Node section gives the vertex
+ * number and x, y, and z components for each vertex.  The \c *Element section
+ * gives the 4 vertices in 2D (8 vertices in 3D) of each element in counter
+ * clockwise order. So in 2D the nodes are given as:
+ *
+ *   4                     3
+ *   +-------------------+
+ *   |                   |
+ *   |                   |
+ *   |                   |
+ *   |                   |
+ *   |                   |
+ *   |                   |
+ *   +-------------------+
+ *   1                   2
+ *
+ * and in 3D they are given as:
+ *
+ * 8                     7
+ *  +---------------------+
+ *  |\                    |\
+ *  | \                   | \
+ *  |  \                  |  \
+ *  |   \                 |   \
+ *  |   5+---------------------+6
+ *  |    |                |    |
+ *  +----|----------------+    |
+ *  4\   |               3 \   |
+ *    \  |                  \  |
+ *     \ |                   \ |
+ *      \|                    \|
+ *       +---------------------+
+ *       1                     2
+ *
+ * \code
+ * *Heading
+ *  box.inp
+ * *Node
+ * 1,  -5, -5, 0
+ * 2,   5, -5, 0
+ * 3,   5,  5, 0
+ * 4,  -5,  5, 0
+ * 5,   0, -5, 0
+ * 6,   5,  0, 0
+ * 7,   0,  5, 0
+ * 8,  -5,  0, 0
+ * 9,   1, -1, 0
+ * 10,  0,  0, 0
+ * 11, -2,  1, 0
+ * *Element, type=CPS4, ELSET=Surface1
+ * 1,  1, 10, 11, 8
+ * 2,  3, 10, 9,  6
+ * 3,  9, 10, 1,  5
+ * 4,  7,  4, 8, 11
+ * 5, 11, 10, 3,  7
+ * 6,  2,  6, 9,  5
+ * \endcode
+ *
+ * This code can be called two ways.  The first, when \c vertex==NULL and \c
+ * tree_to_vertex==NULL, is used to count the number of tress and vertices in
+ * the connectivity to be generated by the \c .inp mesh in the \a stream.  The
+ * second, when \c vertices!=NULL and \c tree_to_vertex!=NULL, fill \c vertices
+ * and \c tree_to_vertex.  In this case \c num_vertices and \c num_trees need
+ * to be set to the maximum number of entries allocated in \c vertices and \c
+ * tree_to_vertex.
+ *
+ * \param[in,out]  stream         file stream to read the connectivity from
+ * \param[in,out]  num_vertices   the number of vertices in the connectivity
+ * \param[in,out]  num_trees      the number of trees in the connectivity
+ * \param[out]     vertices       the list of \c vertices of the connectivity
+ * \param[out]     tree_to_vertex the \c tree_to_vertex map of the connectivity
+ *
+ * \returns 0 if successful and nonzero if not
+ */
+int                 p4est_connectivity_read_inp_stream (FILE * stream,
+                                                        p4est_topidx_t *
+                                                        num_vertices,
+                                                        p4est_topidx_t *
+                                                        num_trees,
+                                                        double *vertices,
+                                                        p4est_topidx_t *
+                                                        tree_to_vertex);
+
+/** Create a p4est connectivity from an ABAQUS input file.
+ *
+ * This utility function reads a basic ABAQUS file supporting element type with
+ * the prefix C2D4, CPS4, and S4 in 2D and of type C3D8 reading them as
+ * bilinear quadrilateral and trilinear hexahedral trees respectively.
+ *
+ * A basic 2D mesh is given below.  The \c *Node section gives the vertex
+ * number and x, y, and z components for each vertex.  The \c *Element section
+ * gives the 4 vertices in 2D (8 vertices in 3D) of each element in counter
+ * clockwise order. So in 2D the nodes are given as:
+ *
+ *   4                     3
+ *   +-------------------+
+ *   |                   |
+ *   |                   |
+ *   |                   |
+ *   |                   |
+ *   |                   |
+ *   |                   |
+ *   +-------------------+
+ *   1                   2
+ *
+ * and in 3D they are given as:
+ *
+ * 8                     7
+ *  +---------------------+
+ *  |\                    |\
+ *  | \                   | \
+ *  |  \                  |  \
+ *  |   \                 |   \
+ *  |   5+---------------------+6
+ *  |    |                |    |
+ *  +----|----------------+    |
+ *  4\   |               3 \   |
+ *    \  |                  \  |
+ *     \ |                   \ |
+ *      \|                    \|
+ *       +---------------------+
+ *       1                     2
+ *
+ * \code
+ * *Heading
+ *  box.inp
+ * *Node
+ * 1,  -5, -5, 0
+ * 2,   5, -5, 0
+ * 3,   5,  5, 0
+ * 4,  -5,  5, 0
+ * 5,   0, -5, 0
+ * 6,   5,  0, 0
+ * 7,   0,  5, 0
+ * 8,  -5,  0, 0
+ * 9,   1, -1, 0
+ * 10,  0,  0, 0
+ * 11, -2,  1, 0
+ * *Element, type=CPS4, ELSET=Surface1
+ * 1,  1, 10, 11, 8
+ * 2,  3, 10, 9,  6
+ * 3,  9, 10, 1,  5
+ * 4,  7,  4, 8, 11
+ * 5, 11, 10, 3,  7
+ * 6,  2,  6, 9,  5
+ * \endcode
+ *
+ * This function reads a mesh from \a filename and returns an associated p4est
+ * connectivity.
+ *
+ * \param[in]  filename         file to read the connectivity from
+ *
+ * \return  an allocated connectivity associated with the mesh in \a filename
+ *          or NULL if an error occurred.
+ */
+p4est_connectivity_t *p4est_connectivity_read_inp (const char *filename);
 
 SC_EXTERN_C_END;
 

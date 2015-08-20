@@ -10,28 +10,29 @@ BUILD_DIR="$UNPACK/p4est-build"
 BUILD_FAST="$BUILD_DIR/FAST"
 BUILD_DEBUG="$BUILD_DIR/DEBUG"
 
-function busage() {
+# functions
+busage () {
         echo "Usage: `basename $0` <p4est_tar.gz_file> [<install location>]"
 }
-function bdie () {
+bdie () {
         echo "Error: $@"
         exit 1
 }
 
-if test -z "$CFLAGS" -a -z "$P4EST_CFLAGS_FAST" ; then
+if test "x$CFLAGS" = x && test "x$P4EST_CFLAGS_FAST" = x ; then
         export CFLAGS_FAST="-O2"
 else
         export CFLAGS_FAST="$CFLAGS $P4EST_CFLAGS_FAST"
 fi
 echo "CFLAGS_FAST: $CFLAGS_FAST"
-if test -z "$CFLAGS" -a -z "$P4EST_CFLAGS_DEBUG" ; then
+if test "x$CFLAGS" = x && test "x$P4EST_CFLAGS_DEBUG" = x ; then
         export CFLAGS_DEBUG="-O0 -g"
 else
         export CFLAGS_DEBUG="$CFLAGS $P4EST_CFLAGS_DEBUG"
 fi
 echo "CFLAGS_DEBUG: $CFLAGS_DEBUG"
 
-TGZ="$1"; shift
+TGZ="$1"
 if test ! -f "$TGZ" ; then
         busage
         bdie "File not found"
@@ -40,11 +41,14 @@ if ! (echo "$TGZ" | grep -q 'p4est.*.tar.gz') ; then
         busage
         bdie "File name mismatch"
 fi
+shift
 
 # choose names for fast and debug installation directories
-INSTALL_DIR="$1"; shift
-if test -z "$INSTALL_DIR" ; then
+INSTALL_DIR="$1"
+if test "x$INSTALL_DIR" = x ; then
         INSTALL_DIR="$UNPACK/p4est-install"
+else
+	shift
 fi
 INSTALL_FAST="$INSTALL_DIR/FAST"
 INSTALL_DEBUG="$INSTALL_DIR/DEBUG"
@@ -81,9 +85,9 @@ echo "Build FAST version in $BUILD_FAST"
 mkdir -p "$BUILD_FAST"
 cd "$BUILD_FAST"
 "$UNPACK/$DIR/configure" --enable-mpi --enable-shared \
-        --disable-vtk-binary --without-blas \
+        --disable-vtk-binary --without-blas --disable-mpithread \
         --prefix="$INSTALL_FAST" CFLAGS="$CFLAGS_FAST" \
-        CPPFLAGS="-DSC_LOG_PRIORITY=SC_LP_ESSENTIAL" \
+        CPPFLAGS="-DSC_LOG_PRIORITY=SC_LP_ESSENTIAL -DP4EST_BACKWARD_DEALII" \
         "$@" > config.output || bdie "Error in configure"
 make -C sc -j 8 > make.output || bdie "Error in make sc"
 make -j 8 >> make.output || bdie "Error in make p4est"
@@ -95,9 +99,9 @@ echo "Build DEBUG version in $BUILD_DEBUG"
 mkdir -p "$BUILD_DEBUG"
 cd "$BUILD_DEBUG"
 "$UNPACK/$DIR/configure" --enable-debug --enable-mpi --enable-shared \
-        --disable-vtk-binary --without-blas \
+        --disable-vtk-binary --without-blas --disable-mpithread \
         --prefix="$INSTALL_DEBUG" CFLAGS="$CFLAGS_DEBUG" \
-        CPPFLAGS="-DSC_LOG_PRIORITY=SC_LP_ESSENTIAL" \
+        CPPFLAGS="-DSC_LOG_PRIORITY=SC_LP_ESSENTIAL -DP4EST_BACKWARD_DEALII" \
         "$@" > config.output || bdie "Error in configure"
 make -C sc -j 8 > make.output || bdie "Error in make sc"
 make -j 8 >> make.output || bdie "Error in make p4est"

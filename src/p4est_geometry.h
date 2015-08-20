@@ -21,22 +21,63 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
-/********************************************************************
- *                          IMPORTANT NOTE                          *
- *                                                                  *
- * The p4est_geometry interface will be removed shortly.            *
- * Please do NOT use this interface for newly written code.         *
- * It will be replaced with a generic transfinite blending scheme.  *
- ********************************************************************/
+/** \file p4est_geometry.h transforms from vertex frame to physical space
+ *
+ * \ingroup p4est
+ */
 
 #ifndef P4EST_GEOMETRY_H
 #define P4EST_GEOMETRY_H
 
-#include <p4est.h>
+#include <p4est_connectivity.h>
 
 SC_EXTERN_C_BEGIN;
 
 typedef struct p4est_geometry p4est_geometry_t;
+
+/** Forward transformation from the reference unit square to physical space.
+ * Note that the two-dimensional connectivities have 3D vertex coordinates
+ * that can be used in the transformation if so desired.
+ * The physical space "xyz" is user-defined, currently used for VTK output.
+ */
+typedef void        (*p4est_geometry_X_t) (p4est_geometry_t * geom,
+                                           p4est_topidx_t which_tree,
+                                           const double abc[3],
+                                           double xyz[3]);
+
+/** Destructor prototype for a user-allocated \a p4est_geometry_t.
+ * It is invoked by p4est_geometry_destroy.  If the user chooses to
+ * reserve the structure statically, simply don't call p4est_geometry_destroy.
+ */
+typedef void        (*p4est_geometry_destroy_t) (p4est_geometry_t * geom);
+
+/** This structure can be filled or allocated by the user.
+ * p4est will never change its contents.
+ */
+struct p4est_geometry
+{
+  const char         *name;     /**< User's choice is arbitrary. */
+  void               *user;     /**< User's choice is arbitrary. */
+  p4est_geometry_X_t  X;        /**< Coordinate transformation. */
+  p4est_geometry_destroy_t destroy;     /**< Destructor called by
+                                             p4est_geometry_destroy.  If
+                                             NULL, P4EST_FREE is called. */
+};
+
+/** Can be used to conveniently destroy a geometry structure.
+ * The user is free not to call this function at all if they handle the
+ * memory of the p4est_geometry_t in their own way.
+ */
+void                p4est_geometry_destroy (p4est_geometry_t * geom);
+
+/** Create a geometry structure based on the vertices in a connectivity.
+ * The transformation is constructed using bilinear interpolation.
+ * \param [in] conn A p4est_connectivity_t with valid vertices.  We do NOT
+ *                  take ownership and expect this structure to stay alive.
+ * \return          Geometry structure; use with p4est_geometry_destroy.
+ */
+p4est_geometry_t   *p4est_geometry_new_connectivity (p4est_connectivity_t *
+                                                     conn);
 
 SC_EXTERN_C_END;
 

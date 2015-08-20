@@ -711,6 +711,7 @@ static void
 test_face_boundary (p4est_iter_face_info_t * info)
 {
   int                 f;
+  int                 result;
   p4est_qcoord_t      end;
   p4est_iter_face_side_t *fside;
   p4est_quadrant_t   *q;
@@ -730,12 +731,14 @@ test_face_boundary (p4est_iter_face_info_t * info)
     }
     end = P4EST_LAST_OFFSET (q->level);
 
-    SC_CHECK_ABORT ((f == 0 && q->x == 0) || (f == 1 && q->x == end) ||
-                    (f == 2 && q->y == 0) || (f == 3 && q->y == end) ||
+    result =
+      (f == 0 && q->x == 0) || (f == 1 && q->x == end) ||
+      (f == 2 && q->y == 0) || (f == 3 && q->y == end) ||
 #ifdef P4_TO_P8
-                    (f == 4 && q->z == 0) || (f == 5 && q->z == end) ||
+      (f == 4 && q->z == 0) || (f == 5 && q->z == end) ||
 #endif
-                    0, "Not a tree boundary face");
+      0;
+    SC_CHECK_ABORT (result, "Not a tree boundary face");
   }
 }
 
@@ -822,7 +825,7 @@ test_volume_adjacency (p4est_iter_volume_info_t * info, void *data)
 int
 main (int argc, char **argv)
 {
-  MPI_Comm            mpicomm;
+  sc_MPI_Comm         mpicomm;
   int                 mpiret;
   int                 mpisize, mpirank;
   p4est_t            *p4est;
@@ -850,12 +853,12 @@ main (int argc, char **argv)
   ntests = 3;
 
   /* initialize MPI */
-  mpiret = MPI_Init (&argc, &argv);
+  mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpicomm = MPI_COMM_WORLD;
-  mpiret = MPI_Comm_size (mpicomm, &mpisize);
+  mpicomm = sc_MPI_COMM_WORLD;
+  mpiret = sc_MPI_Comm_size (mpicomm, &mpisize);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpicomm, &mpirank);
+  mpiret = sc_MPI_Comm_rank (mpicomm, &mpirank);
   SC_CHECK_MPI (mpiret);
 
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
@@ -896,7 +899,7 @@ main (int argc, char **argv)
     p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
 
     /* do a uniform partition */
-    p4est_partition (p4est, NULL);
+    p4est_partition (p4est, 0, NULL);
 
     num_quads = p4est->local_num_quadrants;
     num_checks = checks_per_quad * num_quads;
@@ -1039,7 +1042,7 @@ main (int argc, char **argv)
   /* exit */
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;

@@ -21,6 +21,13 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
+/** \file p8est_mesh.h
+ *
+ * forest topology in a conventional mesh format
+ *
+ * \ingroup p8est
+ */
+
 #ifndef P8EST_MESH_H
 #define P8EST_MESH_H
 
@@ -32,8 +39,13 @@ SC_EXTERN_C_BEGIN;
  * It stores the locally relevant neighborhood, that is, all locally owned
  * quadrants and one layer of adjacent ghost quadrants and their owners.
  *
- * For each local quadrant, its tree number is stored in quad_to_tree.
+ * For each local quadrant, its tree number is stored in quad_to_tree. The
+ * quad_to_tree array is NULL by default and can be enabled using
+ * p8est_mesh_new_ext.
  * For each ghost quadrant, its owner rank is stored in ghost_to_proc.
+ * For each level, an array of local quadrant numbers is stored in quad_level.
+ * The quad_level array is NULL by default and can be enabled using
+ * p8est_mesh_new_ext.
  *
  * The quad_to_quad list stores one value for each local quadrant's face.
  * This value is in 0..local_num_quadrants-1 for local quadrants, or in
@@ -41,7 +53,7 @@ SC_EXTERN_C_BEGIN;
  * The quad_to_face list has equally many entries which are either:
  * 1. A value of v = 0..23 indicates one same-size neighbor.
  *    This value is decoded as v = r * 6 + nf, where nf = 0..5 is the
- *    neigbbor's connecting face number and r = 0..3 is the relative
+ *    neighbor's connecting face number and r = 0..3 is the relative
  *    orientation of the neighbor's face, see p8est_connectivity.h.
  * 2. A value of v = 24..119 indicates a double-size neighbor.
  *    This value is decoded as v = 24 + h * 24 + r * 6 + nf, where
@@ -55,17 +67,23 @@ SC_EXTERN_C_BEGIN;
  * A quadrant on the boundary of the forest sees itself and its face number.
  *
  * The quad_to_corner list stores corner neighbors that are not face or edge
- * neighbors.  On the inside of a tree or inside an inter-tree face, there is
- * precisely one such neighbor per corner.  In this case, its index is encoded
- * as described above for quad_to_quad.
- * On the other hand, if a corner is an inter-tree corner or inside an inter-tree
- * edge, then the number of corner neighbors may be any non-negative number.
- * In this case, the value is
- * in local_num_quadrants + local_num_ghosts + [0 .. num_corners - 1].
+ * neighbors.  On the inside of a tree, there is precisely one such neighbor
+ * per corner.  In this case, its index is encoded as described above for
+ * quad_to_quad.  The neighbor's matching corner number is always diagonally
+ * opposite.
+ *
+ * On the inside of an inter-tree face, we have precisely one corner neighbor.
+ * If a corner is across an inter-tree edge or corner, then the number of
+ * corner neighbors may be any non-negative number.  In all inter-tree cases,
+ * the quad_to_corner value is in
+ *    local_num_quadrants + local_num_ghosts + [0 .. local_num_corners - 1]
+ * where the offset by local quadrants and ghosts is implicitly substracted.
  * It indexes into corner_offset, which encodes a group of corner neighbors.
  * Each group contains the quadrant numbers encoded as usual for quad_to_quad
  * in corner_quad, and the corner number from the neighbor as corner_corner.
- * Inter-tree/tree-edge corners are NOT YET IMPLEMENTED and set to -2.
+ *
+ * Intra-tree corners and inter-tree face and corner corners are implemented.
+ * Edge inter-tree corners are NOT IMPLEMENTED and are assigned the value -2.
  * Corners with no diagonal neighbor at all are assigned the value -1.
  */
 typedef struct
@@ -73,17 +91,21 @@ typedef struct
   p4est_locidx_t      local_num_quadrants;
   p4est_locidx_t      ghost_num_quadrants;
 
-  p4est_topidx_t     *quad_to_tree;     /* tree index for each local quad */
-  int                *ghost_to_proc;    /* 1 integer for each ghost quad */
+  p4est_topidx_t     *quad_to_tree;     /**< tree index for each local quad,
+                                             NULL by default */
+  int                *ghost_to_proc;    /**< processor for each ghost quad */
 
-  p4est_locidx_t     *quad_to_quad;     /* 1 index for each of the 6 faces */
-  int8_t             *quad_to_face;     /* encodes orientation/2:1 status */
-  sc_array_t         *quad_to_half;     /* stores half-size neigbors */
+  p4est_locidx_t     *quad_to_quad;     /**< one index for each of the 6 faces */
+  int8_t             *quad_to_face;     /**< encodes orientation/2:1 status */
+  sc_array_t         *quad_to_half;     /**< stores half-size neighbors */
+  sc_array_t         *quad_level;       /**< stores lists of per-level quads,
+                                             NULL by default */
 
-  /* CAUTION: tree-boundary/tree-edge corners not yet implemented */
+  /* These members are NULL if the connect_t is not P4EST_CONNECT_CORNER */
+  /* CAUTION: tree-boundary corners not yet implemented */
   p4est_locidx_t      local_num_corners;        /* tree-boundary corners */
   p4est_locidx_t     *quad_to_corner;   /* 8 indices for each local quad */
-  sc_array_t         *corner_offset;    /* has num_corners + 1 entries */
+  sc_array_t         *corner_offset;    /* local_num_corners + 1 entries */
   sc_array_t         *corner_quad;      /* corner_offset indexes into this */
   sc_array_t         *corner_corner;    /* and this one too (type int8_t) */
 }
@@ -107,6 +129,9 @@ typedef struct
   /* neighbor information */
   int                 face;     /* Face number in 0..5. */
   int                 subface;  /* Hanging neighbor number in 0..3. */
+
+  /* internal information */
+  p4est_locidx_t      current_qtq;
 }
 p8est_mesh_face_neighbor_t;
 
@@ -119,7 +144,7 @@ size_t              p8est_mesh_memory_used (p8est_mesh_t * mesh);
 /** Create a p8est_mesh structure.
  * \param [in] p8est    A forest that is fully 2:1 balanced.
  * \param [in] ghost    The ghost layer created from the provided p4est.
- * \param [in] btype    Currently ignored, only face neighbors are stored.
+ * \param [in] btype    Determines the highest codimension of neighbors.
  * \return              A fully allocated mesh structure.
  */
 p8est_mesh_t       *p8est_mesh_new (p8est_t * p8est, p8est_ghost_t * ghost,
@@ -188,6 +213,16 @@ p8est_quadrant_t   *p8est_mesh_face_neighbor_next (p8est_mesh_face_neighbor_t
                                                    p4est_topidx_t * ntree,
                                                    p4est_locidx_t * nquad,
                                                    int *nface, int *nrank);
+
+/** Get the user data for the current face neighbor.
+ * \param [in]     mfn           Internal status of the iterator.
+ * \param [in]     ghost_data    Data for the ghost quadrants that has been
+ *                               synchronized with p4est_ghost_exchange_data.
+ * \return                       A pointer to the user data for the current
+ *                               neighbor.
+ */
+void               *p8est_mesh_face_neighbor_data (p8est_mesh_face_neighbor_t
+                                                   * mfn, void *ghost_data);
 
 SC_EXTERN_C_END;
 

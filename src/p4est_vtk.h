@@ -21,30 +21,30 @@
   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 */
 
+/** \file p4est_vtk.h
+ *
+ * Routines for printing a forest and associated fields to vtk format.
+ *
+ * \ingroup p4est
+ */
+
 #ifndef P4EST_VTK_H
 #define P4EST_VTK_H
 
-/********************************************************************
- *                          IMPORTANT NOTE                          *
- *                                                                  *
- * The p4est_geometry interface will be removed shortly.            *
- * Please do NOT use this interface for newly written code.         *
- * It will be replaced with a generic transfinite blending scheme.  *
- ********************************************************************/
-
 #include <p4est_geometry.h>
+#include <p4est.h>
 
 SC_EXTERN_C_BEGIN;
 
 /** This writes out the p4est in VTK format.
  *
  * This is a convenience function for the special
- * case of writing out the tree id and MPI rank only.
+ * case of writing out the tree id, quadrant level, and MPI rank only.
  * One file is written per MPI rank, and one meta file on rank 0.
  * This function will abort if there is a file error.
  *
  * \param [in] p4est    The p4est to be written.
- * \param [in] geom     A p4est_geometry_t structure or NULL for identity.
+ * \param [in] geom     A p4est_geometry_t structure or NULL for vertex space.
  * \param [in] filename The first part of the file name which will have the
  *                      MPI rank appended to it: The output file will be
  *                      filename_rank.vtu, and the meta file filename.pvtu).
@@ -58,9 +58,10 @@ void                p4est_vtk_write_file (p4est_t * p4est,
  * This is a convenience function that will abort if there is a file error.
  *
  * \param [in] p4est    The p4est to be written.
- * \param [in] geom     A p4est_geometry_t structure or NULL for identity.
+ * \param [in] geom     A p4est_geometry_t structure or NULL for vertex space.
  * \param [in] scale    Double value between 0 and 1 to scale each quadrant.
  * \param [in] write_tree   Include the tree id as output field.
+ * \param [in] write_level  Include the tree levels as output field.
  * \param [in] write_rank   Include the MPI rank as output field.
  * \param [in] wrap_tree    The MPI rank is written module wrap_tree, or 0.
  * \param filename      First part of the name, see p4est_vtk_write_file.
@@ -72,7 +73,8 @@ void                p4est_vtk_write_file (p4est_t * p4est,
  */
 void                p4est_vtk_write_all (p4est_t * p4est,
                                          p4est_geometry_t * geom,
-                                         double scale, int write_tree,
+                                         double scale,
+                                         int write_tree, int write_level,
                                          int write_rank, int wrap_rank,
                                          int num_scalars, int num_vectors,
                                          const char *filename, ...);
@@ -91,10 +93,11 @@ void                p4est_vtk_write_all (p4est_t * p4est,
  * \endcode
  *
  * \param p4est     The p4est to be written.
- * \param geom      A p4est_geometry_t structure or NULL for identity.
+ * \param geom      A p4est_geometry_t structure or NULL for vertex space.
  * \param scale     The relative length factor of the quadrants.
  *                  Use 1.0 to fit quadrants exactly, less to create gaps.
  * \param write_tree    Boolean to determine if the tree id should be output.
+ * \param write_level   Boolean to determine if the tree levels should be output.
  * \param write_rank    Boolean to determine if the MPI rank should be output.
  * \param wrap_rank Number to wrap around the rank with a modulo operation.
  *                  Can be 0 for no wrapping.
@@ -108,7 +111,8 @@ void                p4est_vtk_write_all (p4est_t * p4est,
  */
 int                 p4est_vtk_write_header (p4est_t * p4est,
                                             p4est_geometry_t * geom,
-                                            double scale, int write_tree,
+                                            double scale,
+                                            int write_tree, int write_level,
                                             int write_rank, int wrap_rank,
                                             const char *point_scalars,
                                             const char *point_vectors,
@@ -124,7 +128,7 @@ int                 p4est_vtk_write_header (p4est_t * p4est,
  * The allows there to be an arbitrary number of fields.
  *
  * \param p4est     The p4est to be written.
- * \param geom      A p4est_geometry_t structure or NULL for identity.
+ * \param geom      A p4est_geometry_t structure or NULL for vertex space.
  * \param filename  The first part of the name which will have
  *                  the proc number appended to it (i.e., the
  *                  output file will be filename_procNum.vtu).
@@ -149,7 +153,7 @@ int                 p4est_vtk_write_point_scalar (p4est_t * p4est,
  * The allows there to be an arbitrary number of fields.
  *
  * \param p4est     The p4est to be written.
- * \param geom      A p4est_geometry_t structure or NULL for identity.
+ * \param geom      A p4est_geometry_t structure or NULL for vertex space.
  * \param filename  The first part of the name which will have
  *                  the proc number appended to it (i.e., the
  *                  output file will be filename_procNum.vtu).

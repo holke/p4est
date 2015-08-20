@@ -85,7 +85,7 @@ p4est_deflate_quadrants (p4est_t * p4est, sc_array_t ** data)
 }
 
 p4est_t            *
-p4est_inflate (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
+p4est_inflate (sc_MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
                const p4est_gloidx_t * global_first_quadrant,
                const p4est_gloidx_t * pertree,
                sc_array_t * quadrants, sc_array_t * data, void *user_pointer)
@@ -99,7 +99,7 @@ p4est_inflate (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   p4est_t            *p4est;
   p4est_tree_t       *tree;
   p4est_quadrant_t   *q;
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
   int                 p;
 #endif
   int8_t              ql, tml;
@@ -110,6 +110,7 @@ p4est_inflate (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   char               *dap;
 
   P4EST_GLOBAL_PRODUCTION ("Into " P4EST_STRING "_inflate\n");
+  p4est_log_indent_push ();
 
   P4EST_ASSERT (p4est_connectivity_is_valid (connectivity));
   P4EST_ASSERT (global_first_quadrant != NULL);
@@ -120,9 +121,9 @@ p4est_inflate (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
   /* user_pointer may be anything, we don't look at it */
 
   /* retrieve MPI information */
-  mpiret = MPI_Comm_size (mpicomm, &num_procs);
+  mpiret = sc_MPI_Comm_size (mpicomm, &num_procs);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpicomm, &rank);
+  mpiret = sc_MPI_Comm_rank (mpicomm, &rank);
   SC_CHECK_MPI (mpiret);
 
   /* assign some data members */
@@ -142,7 +143,7 @@ p4est_inflate (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
     P4EST_ALLOC (p4est_gloidx_t, num_procs + 1);
   memcpy (p4est->global_first_quadrant, global_first_quadrant,
           (num_procs + 1) * sizeof (p4est_gloidx_t));
-#ifdef P4EST_DEBUG
+#ifdef P4EST_ENABLE_DEBUG
   P4EST_ASSERT (gfq[0] == 0);
   for (p = 0; p < num_procs; ++p) {
     P4EST_ASSERT (gfq[p] <= gfq[p + 1]);
@@ -261,6 +262,7 @@ p4est_inflate (MPI_Comm mpicomm, p4est_connectivity_t * connectivity,
                   (long long) p4est->local_num_quadrants);
 
   P4EST_ASSERT (p4est_is_valid (p4est));
+  p4est_log_indent_pop ();
   P4EST_GLOBAL_PRODUCTION ("Done " P4EST_STRING "_inflate\n");
 
   return p4est;

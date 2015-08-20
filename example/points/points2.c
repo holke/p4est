@@ -123,16 +123,16 @@ main (int argc, char **argv)
   p4est_connectivity_t *conn;
   p4est_quadrant_t   *points;
   p4est_t            *p4est;
-  MPI_Comm            mpicomm;
+  sc_MPI_Comm         mpicomm;
   const char         *usage;
 
   /* initialize MPI and p4est internals */
-  mpiret = MPI_Init (&argc, &argv);
+  mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
-  mpicomm = MPI_COMM_WORLD;
-  mpiret = MPI_Comm_size (mpicomm, &num_procs);
+  mpicomm = sc_MPI_COMM_WORLD;
+  mpiret = sc_MPI_Comm_size (mpicomm, &num_procs);
   SC_CHECK_MPI (mpiret);
-  mpiret = MPI_Comm_rank (mpicomm, &rank);
+  mpiret = sc_MPI_Comm_rank (mpicomm, &rank);
   SC_CHECK_MPI (mpiret);
 
   sc_init (mpicomm, 1, 1, NULL, SC_LP_DEFAULT);
@@ -222,7 +222,7 @@ main (int argc, char **argv)
   P4EST_FREE (points);
   p4est_vtk_write_file (p4est, NULL, P4EST_STRING "_points_created");
 
-  p4est_partition (p4est, NULL);
+  p4est_partition (p4est, 0, NULL);
   p4est_vtk_write_file (p4est, NULL, P4EST_STRING "_points_partition");
 
   p4est_balance (p4est, P4EST_CONNECT_FULL, NULL);
@@ -234,7 +234,7 @@ main (int argc, char **argv)
   /* clean up and exit */
   sc_finalize ();
 
-  mpiret = MPI_Finalize ();
+  mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
 
   return 0;
