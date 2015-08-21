@@ -3596,27 +3596,21 @@ p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
     /* subsection of shared_nodes is sorted ?
      * values in valid range ? */
     tempshared_node = -1;
-    for (j = 0; j < r1->shared_mine_count; j++) {
+    for (j = r1->shared_mine_offset; j < r1->shared_mine_offset +
+         r1->shared_mine_count; j++) {
       /* check the subsection in shared_nodes of nodes
        * that are owned by process r1->rank */
-      /* TODO the following comparison does not make sense */
-      if (r1->shared_mine_offset <= j
-          && j < r1->shared_mine_offset + r1->shared_mine_count) {
-        if (r1->shared_mine_offset == j)
-          tempshared_node = -1;
-        if (*(p4est_locidx_t *)
-            (sc_array_index_int
-             (&r1->shared_nodes,
-              j + r1->shared_mine_offset)) < tempshared_node)
-          return 0;
+      if (*(p4est_locidx_t *)
+          (sc_array_index_int (&r1->shared_nodes, j)) < tempshared_node) {
+        /* if not sorted */
+        return 0;
       }
       tempshared_node =
-        *(p4est_locidx_t
-          *) (sc_array_index_int (&r1->shared_nodes,
-                                  j + r1->shared_mine_offset));
-
-      if (tempshared_node < 0 || tempshared_node >= lnodes->num_local_nodes)
+        *(p4est_locidx_t *) (sc_array_index_int (&r1->shared_nodes, j));
+      if (tempshared_node < 0 || tempshared_node >= lnodes->num_local_nodes) {
+        /* If not in range */
         return 0;
+      }
     }
   }
 
