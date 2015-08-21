@@ -3485,8 +3485,9 @@ int
 p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
 {
   int                 mpirank, mpiret;
-  int                 temprank, degree_power;
+  int                 temprank, degree_power, degree;
   int                 i, j;
+  int                 boolean;
   sc_array_t          array;
   p4est_lnodes_rank_t *r1;
   p4est_locidx_t      kloc;
@@ -3497,23 +3498,49 @@ p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
   int                 temp_hanging_edge[P8EST_EDGES];
 #endif
 
-
   mpiret = MPI_Comm_rank (lnodes->mpicomm, &mpirank);
   SC_CHECK_MPI (mpiret);
 
+  degree = lnodes->degree;
   /* trivial bounds */
-  if (lnodes->degree < 1 || lnodes->owned_count < 0
+  if (degree < -P4EST_DIM || degree == 0 || lnodes->owned_count < 0
       || lnodes->num_local_nodes < lnodes->owned_count
       || lnodes->global_offset < 0 || lnodes->num_local_elements < 0)
     return 0;
 
-  /* vnodes = (degree+1)^d ? */
-  degree_power = 1;
-  for (i = 0; i < P4EST_DIM; i++) {
-    degree_power *= (lnodes->degree + 1);
+  /* if degree > 0 then check for vnodes = (degree+1)^d
+   * else check if vnodes = P4EST_FACES (+P8EST_EDGES(+P4EST_CHILDREN))
+   *      for degrees -1, -2, -P4EST_DIM
+   */
+  if (degree > 0) {
+    degree_power = 1;
+    for (i = 0; i < P4EST_DIM; i++) {
+      degree_power *= (degree + 1);
+    }
+    if (lnodes->vnodes != degree_power)
+      return 0;
   }
-  if (lnodes->vnodes != degree_power)
-    return 0;
+  else {
+    boolean = 0;
+    if (degree == -1) {
+      boolean = lnodes->vnodes == P4EST_FACES;
+    }
+#ifdef P4_TO_P8
+    else if (degree == -2) {
+      boolean = (lnodes->vnodes == P4EST_FACES + P8EST_EDGES);
+    }
+#endif
+    else if (degree == -P4EST_DIM) {
+      boolean = (lnodes->vnodes == P4EST_FACES +
+#ifdef P4_TO_P8
+                 P8EST_EDGES +
+#endif
+                 P4EST_CHILDREN);
+    }
+    if (boolean == 0) {
+      return 0;
+    }
+  }
 
   /* global_offset matches sum of all owned_counts ? */
   owned_count_sum = 0;
@@ -3542,7 +3569,7 @@ p4est_lnodes_is_valid (p4est_lnodes_t * lnodes)
   temprank = -1;
   for (i = 0; i < (int) lnodes->sharers->elem_count; i++) {
     r1 = p4est_lnodes_rank_array_index_int (lnodes->sharers, i);
-   /* ordered by rank? */
+    /* ordered by rank? */
     if (r1->rank <= temprank)
       return 0;
     temprank = r1->rank;
