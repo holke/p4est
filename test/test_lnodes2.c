@@ -749,6 +749,11 @@ main (int argc, char **argv)
         break;
       }
 
+      /* Check if lnodes is valid */
+      SC_CHECK_ABORTF (p4est_lnodes_is_valid (lnodes),
+                       "lnodes structure corresponding to i=%i j=%i not valid",
+                       i, j);
+
       if (j < 0) {
         p4est_lnodes_destroy (lnodes);
         p4est_log_indent_pop ();
