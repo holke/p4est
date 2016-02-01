@@ -711,9 +711,9 @@ p8est_connectivity_new_tets (p8est_tets_t * ptg)
   }
 
   /* connect p4est tree through faces, edges, and corners */
-  p8est_connectivity_complete (conn);
-  P4EST_GLOBAL_LDEBUGF ("Connectivity has %ld edges and %ld corners\n",
-                        (long) conn->num_edges, (long) conn->num_corners);
+ // p8est_connectivity_complete (conn);
+ // P4EST_GLOBAL_LDEBUGF ("Connectivity has %ld edges and %ld corners\n",
+   //                     (long) conn->num_edges, (long) conn->num_corners);
 
   return conn;
 }
