@@ -186,7 +186,7 @@ main (int argc, char **argv)
  // p8est_refine (p8est, 0,bunny_refine, NULL);
 
   sc_flops_shot (&fi, &snapshot);
-  sc_stats_set1 (&stats[5], snapshot.iwtime, "Refine 4 times");
+  sc_stats_set1 (&stats[5], snapshot.iwtime, "Refine 1 times");
 
 
 /*
@@ -200,7 +200,7 @@ main (int argc, char **argv)
   p8est_tets_destroy (ptg);
 
 
-  sc_stats_compute (sc_MPI_COMM_WORLD, 1, stats);
+  sc_stats_compute (sc_MPI_COMM_WORLD, 6, stats);
   sc_stats_print (p4est_package_id, SC_LP_STATISTICS, 6, stats, 1, 1);
 
   sc_finalize ();
