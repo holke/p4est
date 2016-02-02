@@ -23,9 +23,11 @@
 
 #ifndef P4_TO_P8
 #include <p4est_extended.h>
+#include <p4est_ghost.h>
 #else
 #include <p8est_extended.h>
 #include <p8est_geometry.h>
+#include <p8est_ghost.h>
 #include <p8est_tets_hexes.h>
 #endif
 
@@ -43,14 +45,19 @@ typedef enum exchange_timers
   EXCHANGE_BCAST,
   EXCHANGE_P4EST,
   EXCHANGE_REFINE,
+  EXCHANGE_PARTITION,
   EXCHANGE_GHOST,
+  EXCHANGE_FILL,
+  EXCHANGE_EXCHANGE,
+  EXCHANGE_VERIFY,
   EXCHANGE_TIMERS
 }
 exchange_timers_t;
 
 static const char  *timer_names[EXCHANGE_TIMERS] = {
   "Readtets", "Handed", "Fromtets", "Complete",
-  "Bcast", "P4est", "Refine", "Ghost"
+  "Bcast", "P4est", "Refine", "Partition",
+  "Ghost", "Fill", "Exchange", "Verify"
 };
 
 typedef struct
@@ -69,28 +76,28 @@ box_t;
  * \param [out] xyz        the coordinates of the midpoint of \a q
  */
 static void
-bunny_get_midpoint (p8est_t * p8est, p4est_topidx_t which_tree,
-                    p8est_quadrant_t * q, double xyz[3])
+bunny_get_midpoint (p4est_t * p4est, p4est_topidx_t which_tree,
+                    p4est_quadrant_t * q, double xyz[3])
 {
   p4est_qcoord_t      half_length = P8EST_QUADRANT_LEN (q->level) / 2;
 
-  p8est_qcoord_to_vertex (p8est->connectivity, which_tree,
+  p4est_qcoord_to_vertex (p4est->connectivity, which_tree,
                           q->x + half_length, q->y + half_length,
                           q->z + half_length, xyz);
 }
 
 /* Refine if we lie in a cylinder defined by a bounding box */
 static int
-bunny_refine (p8est_t * p8est, p4est_topidx_t which_tree,
-              p8est_quadrant_t * quadrant)
+bunny_refine (p4est_t * p4est, p4est_topidx_t which_tree,
+              p4est_quadrant_t * quadrant)
 {
   box_t              *box;
   double              coords[3];
   double              R, r;
 
-  box = (box_t *) p8est->user_pointer;
+  box = (box_t *) p4est->user_pointer;
 
-  bunny_get_midpoint (p8est, which_tree, quadrant, coords);
+  bunny_get_midpoint (p4est, which_tree, quadrant, coords);
   R = (box->xM - box->xm) / 4.;
   r = (coords[1] - box->ym) / (box->yM - box->ym) * R;
   if (pow ((coords[0] - (box->xM + box->xm) / 2), 2)
@@ -103,6 +110,78 @@ bunny_refine (p8est_t * p8est, p4est_topidx_t which_tree,
 
 #endif /* P4_TO_P8 */
 
+static const p4est_locidx_t encode = 0xdead13af;
+
+static void
+fill_ghost_data (p4est_t * p4est, p4est_ghost_t * ghost)
+{
+#ifdef P4EST_ENABLE_DEBUG
+  size_t              data_size;
+#endif
+  size_t              zz;
+  p4est_topidx_t      tree_id;
+  p4est_locidx_t      local_id, intree_pos;
+  p4est_quadrant_t   *mirror, *quadrant;
+  p4est_tree_t       *tree;
+
+#ifdef P4EST_ENABLE_DEBUG
+  data_size = p4est->data_size;
+  P4EST_ASSERT (data_size == sizeof (p4est_locidx_t));
+#endif
+
+  for (zz = 0; zz < ghost->mirrors.elem_count; ++zz) {
+    /* get tree and local quadrant number from mirror data */
+    mirror = p4est_quadrant_array_index (&ghost->mirrors, zz);
+    tree_id = mirror->p.piggy3.which_tree;
+    P4EST_ASSERT (p4est->first_local_tree <= tree_id &&
+                  tree_id <= p4est->last_local_tree);
+    local_id = mirror->p.piggy3.local_num;
+    P4EST_ASSERT (0 <= local_id && local_id < p4est->local_num_quadrants);
+
+    /* figure out the real existing quadrant pointed at by the mirror */
+    tree = p4est_tree_array_index (p4est->trees, tree_id);
+    P4EST_ASSERT (tree->quadrants_offset <= local_id);
+    intree_pos = local_id - tree->quadrants_offset;
+    P4EST_ASSERT (intree_pos < (p4est_locidx_t) tree->quadrants.elem_count);
+    quadrant = p4est_quadrant_array_index (&tree->quadrants, intree_pos);
+
+    /* assign this number into the data field and encode it */
+    *(p4est_locidx_t *) quadrant->p.user_data = local_id ^ encode;
+  }
+}
+
+static void
+verify_ghost_data (p4est_t * p4est, p4est_ghost_t * ghost,
+                   p4est_locidx_t * received)
+{
+#ifdef P4EST_ENABLE_DEBUG
+  size_t              data_size;
+#endif
+  size_t              zz;
+#if 0
+  p4est_topidx_t      tree_id;
+#endif
+  p4est_locidx_t      remote_id;
+  p4est_quadrant_t   *remote;
+
+#ifdef P4EST_ENABLE_DEBUG
+  data_size = p4est->data_size;
+  P4EST_ASSERT (data_size == sizeof (p4est_locidx_t));
+#endif
+
+  for (zz = 0; zz < ghost->ghosts.elem_count; ++zz) {
+    /* get tree and remote quadrant number from ghost data */
+    remote = p4est_quadrant_array_index (&ghost->ghosts, zz);
+#if 0
+    tree_id = remote->p.piggy3.which_tree;
+    P4EST_ASSERT (0 <= tree_id && tree_id < p4est->connectivity->num_trees);
+#endif
+    remote_id = remote->p.piggy3.local_num ^ encode;
+
+    SC_CHECK_ABORT (remote_id == received[zz], "Ghost data mismatch");
+  }
+}
+
 int
 main (int argc, char **argv)
 {
@@ -113,19 +192,22 @@ main (int argc, char **argv)
   int                 mpiret;
   int                 mpirank;
   int                 irun, runs;
-  p4est_connectivity_t *connectivity;
-  p4est_t            *p8est;
-  sc_MPI_Comm         mpicomm;
-  box_t               Box_ex1;
-  sc_flopinfo_t       fi, snapshot;
-  double              snaptime[EXCHANGE_TIMERS];
-  sc_statinfo_t       stats[EXCHANGE_TIMERS];
   int                 extim;
+  size_t              data_size;
+  double              snaptime[EXCHANGE_TIMERS];
+  p4est_locidx_t     *received;
+  sc_MPI_Comm         mpicomm;
+  sc_flopinfo_t       fi, snapshot;
+  sc_statinfo_t       stats[EXCHANGE_TIMERS];
+  p4est_connectivity_t *connectivity;
+  p4est_t            *p4est;
+  p4est_ghost_t      *ghost;
 #ifdef P4_TO_P8
   const char         *argbasename;
   p4est_topidx_t      tnum_flips;
   p8est_tets_t       *ptg;
 #endif
+  box_t               Box_ex1;
 
 /*
  * In 2D we run moebius.
@@ -162,6 +244,8 @@ main (int argc, char **argv)
       argbasename = argv[1];
     }
 #endif
+
+    data_size = sizeof (p4est_locidx_t);
 
     Box_ex1.xm = -6;
     Box_ex1.ym = -6;
@@ -259,19 +343,54 @@ main (int argc, char **argv)
 
     /* create a forest */
     sc_flops_snap (&fi, &snapshot);
-    p8est = p4est_new_ext (mpicomm, connectivity, 0, 4, 1, 0, NULL, &Box_ex1);
+    p4est = p4est_new_ext (mpicomm, connectivity, 0, 4, 1,
+                           data_size, NULL, &Box_ex1);
     sc_flops_shot (&fi, &snapshot);
     snaptime[EXCHANGE_P4EST] = snapshot.iwtime;
 
+    /* refine the forest */
     sc_flops_snap (&fi, &snapshot);
 #ifdef P4_TO_P8
-    p4est_refine (p8est, 0, bunny_refine, NULL);
+    p4est_refine (p4est, 0, bunny_refine, NULL);
 #endif
     sc_flops_shot (&fi, &snapshot);
     snaptime[EXCHANGE_REFINE] = snapshot.iwtime;
 
+    /* partition the forest */
+    sc_flops_snap (&fi, &snapshot);
+    p4est_partition (p4est, 1, NULL);
+    sc_flops_shot (&fi, &snapshot);
+    snaptime[EXCHANGE_PARTITION] = snapshot.iwtime;
+
+    /* create a ghost layer */
+    sc_flops_snap (&fi, &snapshot);
+    ghost = p4est_ghost_new (p4est, P4EST_CONNECT_FULL);
+    sc_flops_shot (&fi, &snapshot);
+    snaptime[EXCHANGE_GHOST] = snapshot.iwtime;
+
+    /* fill data to prepare ghost exchange */
+    sc_flops_snap (&fi, &snapshot);
+    received = P4EST_ALLOC (p4est_locidx_t, ghost->ghosts.elem_count);
+    fill_ghost_data (p4est, ghost);
+    sc_flops_shot (&fi, &snapshot);
+    snaptime[EXCHANGE_FILL] = snapshot.iwtime;
+
+    /* execute ghost exchange */
+    sc_flops_snap (&fi, &snapshot);
+    p4est_ghost_exchange_data (p4est, ghost, received);
+    sc_flops_shot (&fi, &snapshot);
+    snaptime[EXCHANGE_EXCHANGE] = snapshot.iwtime;
+
+    /* verify data after ghost exchange */
+    sc_flops_snap (&fi, &snapshot);
+    verify_ghost_data (p4est, ghost, received);
+    sc_flops_shot (&fi, &snapshot);
+    snaptime[EXCHANGE_VERIFY] = snapshot.iwtime;
+
     /* clean up */
-    p4est_destroy (p8est);
+    P4EST_FREE (received);
+    p4est_ghost_destroy (ghost);
+    p4est_destroy (p4est);
     p4est_connectivity_destroy (connectivity);
 
 #ifdef P4_TO_P8
