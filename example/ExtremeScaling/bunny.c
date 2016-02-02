@@ -90,8 +90,8 @@ main (int argc, char **argv)
   sc_MPI_Comm         mpicomm;
   box_t               Box_ex1, Box_bunny;
   sc_flopinfo_t       fi, snapshot;
-  sc_statinfo_t       stats[6];
-  const int           level = 4;
+  sc_statinfo_t       stats[7];
+  const int           level = 0;
 
   mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
@@ -196,6 +196,12 @@ main (int argc, char **argv)
   sc_flops_shot (&fi, &snapshot);
   sc_stats_set1 (&stats[5], snapshot.iwtime, "Refine 1 times");
 
+  sc_flops_snap (&fi, &snapshot);
+  p8est_partition (p8est, 0, NULL);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[6], snapshot.iwtime, "Partition");
+
+
 
 /*
   snprintf (afilename, BUFSIZ, "%s", "read_tetgen");
@@ -208,8 +214,8 @@ main (int argc, char **argv)
   p8est_tets_destroy (ptg);
 
 
-  sc_stats_compute (sc_MPI_COMM_WORLD, 6, stats);
-  sc_stats_print (p4est_package_id, SC_LP_STATISTICS, 6, stats, 1, 1);
+  sc_stats_compute (sc_MPI_COMM_WORLD, 7, stats);
+  sc_stats_print (p4est_package_id, SC_LP_STATISTICS, 7, stats, 1, 1);
 
   sc_finalize ();
   mpiret = sc_MPI_Finalize ();
