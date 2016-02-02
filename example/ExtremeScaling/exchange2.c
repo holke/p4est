@@ -208,6 +208,8 @@ main (int argc, char **argv)
   p8est_tets_t       *ptg;
 #endif
   box_t               Box_ex1;
+  sc_options_t       *opt;
+  int                 level, parsed;
 
 /*
  * In 2D we run moebius.
@@ -219,6 +221,21 @@ main (int argc, char **argv)
 
   sc_init (sc_MPI_COMM_WORLD, 1, 1, NULL, SC_LP_DEFAULT);
   p4est_init (NULL, SC_LP_STATISTICS);
+
+  opt = sc_options_new (argv[0]);
+  sc_options_add_int (opt, 'l',"level", &level, 0,
+                      "Initial refinement level");
+#ifdef P4_TO_P8
+  sc_options_add_string (opt, 'f',"fileprefix",&argbasename, NULL,
+                         "Prefix for tetgen files");
+#endif
+
+  parsed =
+      sc_options_parse (p4est_package_id, SC_LP_ERROR, opt, argc, argv);
+
+  if (parsed < 0) {
+      SC_GLOBAL_LERRORF ("Usage: %s <tetgen file base name>\n", argv[0]);
+  }
 
   mpicomm = sc_MPI_COMM_WORLD;
   mpiret = sc_MPI_Comm_rank (mpicomm, &mpirank);
@@ -233,15 +250,13 @@ main (int argc, char **argv)
   for (irun = 0; irun < runs; ++irun) {
     P4EST_GLOBAL_ESSENTIALF ("Run %s exchange %d\n", P4EST_STRING, irun);
 #ifdef P4_TO_P8
-    argbasename = NULL;
     ptg = NULL;
     tnum_flips = 0;
     if (irun == 1) {
-      if (argc != 2) {
+      if (argbasename == NULL) {
         SC_GLOBAL_LERRORF ("Usage: %s <tetgen file base name>\n", argv[0]);
         sc_abort ();
       }
-      argbasename = argv[1];
     }
 #endif
 
@@ -343,7 +358,7 @@ main (int argc, char **argv)
 
     /* create a forest */
     sc_flops_snap (&fi, &snapshot);
-    p4est = p4est_new_ext (mpicomm, connectivity, 0, 4, 1,
+    p4est = p4est_new_ext (mpicomm, connectivity, 0, level, 1,
                            data_size, NULL, &Box_ex1);
     sc_flops_shot (&fi, &snapshot);
     snaptime[EXCHANGE_P4EST] = snapshot.iwtime;
@@ -407,6 +422,7 @@ main (int argc, char **argv)
                     stats, 1, 1);
   }
 
+  sc_options_destroy (opt);
   sc_finalize ();
   mpiret = sc_MPI_Finalize ();
   SC_CHECK_MPI (mpiret);
