@@ -262,12 +262,12 @@ main (int argc, char **argv)
 
     data_size = sizeof (p4est_locidx_t);
 
-    Box_ex1.xm = -6;
-    Box_ex1.ym = -6;
-    Box_ex1.zm = -6;
-    Box_ex1.xM = 7;
-    Box_ex1.yM = 7;
-    Box_ex1.zM = 7;
+    Box_ex1.xm = 0;
+    Box_ex1.ym = -1;
+    Box_ex1.zm = 0;
+    Box_ex1.xM = 2.5;
+    Box_ex1.yM = 1.5;
+    Box_ex1.zM = 2.5;
 
     /* prepare timers */
     for (extim = EXCHANGE_ZERO; extim < EXCHANGE_TIMERS; ++extim) {
