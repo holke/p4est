@@ -125,24 +125,28 @@ main (int argc, char **argv)
   sc_flops_start (&fi);
   sc_flops_snap (&fi, &snapshot);
   /* read tetgen nodes and tetrahedra from files */
-  ptg = p8est_tets_read (argbasename);
+  if (mpirank == 0) {
+    ptg = p8est_tets_read (argbasename);
+
+    SC_CHECK_ABORTF (ptg != NULL, "Failed to read tetgen %s", argbasename);
+    P4EST_GLOBAL_STATISTICSF ("Read %d nodes and %d tets %s attributes\n",
+                              (int) ptg->nodes->elem_count / 3,
+                              (int) ptg->tets->elem_count / 4,
+                              ptg->tet_attributes != NULL ? "with" : "without");
+
+
+  }
 
   sc_flops_shot (&fi, &snapshot);
   sc_stats_set1 (&stats[0], snapshot.iwtime, "Read");
   sc_flops_snap (&fi, &snapshot);
 
-
-  SC_CHECK_ABORTF (ptg != NULL, "Failed to read tetgen %s", argbasename);
-  P4EST_GLOBAL_STATISTICSF ("Read %d nodes and %d tets %s attributes\n",
-                            (int) ptg->nodes->elem_count / 3,
-                            (int) ptg->tets->elem_count / 4,
-                            ptg->tet_attributes != NULL ? "with" : "without");
-
   /* flip orientation to right-handed */
-  tnum_flips = p8est_tets_make_righthanded (ptg);
-  P4EST_GLOBAL_STATISTICSF ("Performed %ld orientation flip(s)\n",
+  if (mpirank == 0) {
+    tnum_flips = p8est_tets_make_righthanded (ptg);
+    P4EST_GLOBAL_STATISTICSF ("Performed %ld orientation flip(s)\n",
                             (long) tnum_flips);
-
+    }
   sc_flops_shot (&fi, &snapshot);
   sc_stats_set1 (&stats[1], snapshot.iwtime, "Right handed");
 
@@ -211,8 +215,10 @@ main (int argc, char **argv)
   /* clean up */
   p8est_destroy (p8est);
   p8est_connectivity_destroy (connectivity);
-  p8est_tets_destroy (ptg);
 
+  if (mpirank == 0) {
+    p8est_tets_destroy (ptg);
+  }
 
   sc_stats_compute (sc_MPI_COMM_WORLD, 7, stats);
   sc_stats_print (p4est_package_id, SC_LP_STATISTICS, 7, stats, 1, 1);
