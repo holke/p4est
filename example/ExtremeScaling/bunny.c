@@ -88,9 +88,10 @@ main (int argc, char **argv)
   p8est_connectivity_t *connectivity;
   p8est_t            *p8est;
   sc_MPI_Comm         mpicomm;
-  box_t               Box_ex1;
+  box_t               Box_ex1, Box_bunny;
   sc_flopinfo_t       fi, snapshot;
   sc_statinfo_t       stats[6];
+  const int           level = 4;
 
   mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
@@ -112,6 +113,13 @@ main (int argc, char **argv)
   Box_ex1.xM =  7;
   Box_ex1.yM =  7;
   Box_ex1.zM =  7;
+
+  Box_bunny.xm = -43.2;
+  Box_bunny.ym = -33.5;
+  Box_bunny.zm =  0;
+  Box_bunny.xM =  43.2;
+  Box_bunny.yM =  33.5;
+  Box_bunny.zM =  85.6;
 
 
   sc_flops_start (&fi);
@@ -175,11 +183,11 @@ main (int argc, char **argv)
 
   sc_flops_snap (&fi, &snapshot);
 
-  p8est = p8est_new_ext (mpicomm, connectivity, 0, 4, 1,
-                         0, NULL, &Box_ex1);
+  p8est = p8est_new_ext (mpicomm, connectivity, 0, level, 1,
+                         0, NULL, &Box_bunny);
 
   sc_flops_shot (&fi, &snapshot);
-  sc_stats_set1 (&stats[4], snapshot.iwtime, "P8est New");
+  sc_stats_set1 (&stats[4], snapshot.iwtime, "P8est New level 4");
   sc_flops_snap (&fi, &snapshot);
 
   p8est_refine (p8est, 0,bunny_refine, NULL);
