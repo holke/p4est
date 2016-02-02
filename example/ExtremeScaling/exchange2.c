@@ -410,7 +410,9 @@ main (int argc, char **argv)
 
 #ifdef P4_TO_P8
     if (irun == 1) {
-      p8est_tets_destroy (ptg);
+      if (mpirank == 0) {
+        p8est_tets_destroy (ptg);
+      }
     }
 #endif
 
