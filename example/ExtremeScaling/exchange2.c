@@ -35,7 +35,7 @@
 
 typedef struct
 {
-    double xm,xM,ym,yM,zm,zM;
+  double              xm, xM, ym, yM, zm, zM;
 }
 box_t;
 
@@ -56,8 +56,7 @@ bunny_get_midpoint (p8est_t * p8est, p4est_topidx_t which_tree,
 
   p8est_qcoord_to_vertex (p8est->connectivity, which_tree,
                           q->x + half_length, q->y + half_length,
-                          q->z + half_length,
-                          xyz);
+                          q->z + half_length, xyz);
 }
 
 /* Refine if we lie in a cylinder defined by a bounding box */
@@ -65,21 +64,21 @@ static int
 bunny_refine (p8est_t * p8est, p4est_topidx_t which_tree,
               p8est_quadrant_t * quadrant)
 {
-    box_t * box;
-    double coords[3];
-    double R, r;
+  box_t              *box;
+  double              coords[3];
+  double              R, r;
 
+  box = (box_t *) p8est->user_pointer;
 
-    box = (box_t *) p8est->user_pointer;
-
-    bunny_get_midpoint (p8est, which_tree, quadrant, coords);
-    R = (box->xM-box->xm)/4.;
-    r = (coords[1] - box->ym)/(box->yM - box->ym) * R;
-    if (pow((coords[0] - (box->xM + box->xm)/2),2)
-            + pow((coords[2] - (box->zM + box->zm)/2),2) <=  r*r) {
-        return 1;
-    }
-    else return 0;
+  bunny_get_midpoint (p8est, which_tree, quadrant, coords);
+  R = (box->xM - box->xm) / 4.;
+  r = (coords[1] - box->ym) / (box->yM - box->ym) * R;
+  if (pow ((coords[0] - (box->xM + box->xm) / 2), 2)
+      + pow ((coords[2] - (box->zM + box->zm) / 2), 2) <= r * r) {
+    return 1;
+  }
+  else
+    return 0;
 }
 
 #endif /* P4_TO_P8 */
@@ -146,9 +145,9 @@ main (int argc, char **argv)
     Box_ex1.xm = -6;
     Box_ex1.ym = -6;
     Box_ex1.zm = -6;
-    Box_ex1.xM =  7;
-    Box_ex1.yM =  7;
-    Box_ex1.zM =  7;
+    Box_ex1.xM = 7;
+    Box_ex1.yM = 7;
+    Box_ex1.zM = 7;
 
     time_read = time_handed = time_newtets = time_complete = 0.;
 
@@ -170,12 +169,13 @@ main (int argc, char **argv)
       P4EST_ASSERT (irun == 1);
 
       /* so only here we read a mesh file and only on one processor. */
-  
+
       if (mpirank == 0) {
         /* read tetgen nodes and tetrahedra from files */
         P4EST_ASSERT (argbasename != NULL);
         ptg = p8est_tets_read (argbasename);
-        SC_CHECK_ABORTF (ptg != NULL, "Failed to read tetgen %s", argbasename);
+        SC_CHECK_ABORTF (ptg != NULL, "Failed to read tetgen %s",
+                         argbasename);
       }
       sc_flops_shot (&fi, &snapshot);
       time_read = snapshot.iwtime;
@@ -185,8 +185,9 @@ main (int argc, char **argv)
         P4EST_GLOBAL_STATISTICSF ("Read %d nodes and %d tets %s attributes\n",
                                   (int) ptg->nodes->elem_count / 3,
                                   (int) ptg->tets->elem_count / 4,
-                                  ptg->tet_attributes != NULL ? "with" : "without");
-  
+                                  ptg->tet_attributes !=
+                                  NULL ? "with" : "without");
+
         /* flip orientation to right-handed */
         tnum_flips = p8est_tets_make_righthanded (ptg);
         P4EST_GLOBAL_STATISTICSF ("Performed %ld orientation flip(s)\n",
@@ -195,7 +196,7 @@ main (int argc, char **argv)
       sc_flops_shot (&fi, &snapshot);
       time_handed = snapshot.iwtime;
       sc_flops_snap (&fi, &snapshot);
-  
+
       if (mpirank == 0) {
         /* create a connectivity from the tet mesh */
         connectivity = p8est_connectivity_new_tets (ptg);
@@ -215,15 +216,15 @@ main (int argc, char **argv)
       sc_flops_shot (&fi, &snapshot);
       time_complete = snapshot.iwtime;
       sc_flops_snap (&fi, &snapshot);
- 
+
       /* TODO: save connectivity to p4est binary format */
       /*
-      if (mpirank == 0) {
-        snprintf (afilename, BUFSIZ, "%s", "read_tetgen.p8c");
-        retval = p8est_connectivity_save (afilename, connectivity);
-        SC_CHECK_ABORT (retval == 0, "Failed connectivity_save");
-      }
-      */
+         if (mpirank == 0) {
+         snprintf (afilename, BUFSIZ, "%s", "read_tetgen.p8c");
+         retval = p8est_connectivity_save (afilename, connectivity);
+         SC_CHECK_ABORT (retval == 0, "Failed connectivity_save");
+         }
+       */
     }
 #endif
     P4EST_ASSERT ((mpirank == 0) == (connectivity != NULL));
@@ -238,14 +239,13 @@ main (int argc, char **argv)
 
     /* create a forest and visualize */
 
-    p8est = p4est_new_ext (mpicomm, connectivity, 0, 4, 1,
-                           0, NULL, &Box_ex1);
+    p8est = p4est_new_ext (mpicomm, connectivity, 0, 4, 1, 0, NULL, &Box_ex1);
     sc_flops_shot (&fi, &snapshot);
     sc_stats_set1 (&stats[4], snapshot.iwtime, P4EST_STRING "_new");
     sc_flops_snap (&fi, &snapshot);
 
 #ifdef P4_TO_P8
-    p4est_refine (p8est, 0,bunny_refine, NULL);
+    p4est_refine (p8est, 0, bunny_refine, NULL);
 #endif
     sc_flops_shot (&fi, &snapshot);
     sc_stats_set1 (&stats[5], snapshot.iwtime, "Refine 1 times");
