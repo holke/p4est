@@ -79,7 +79,7 @@ static void
 bunny_get_midpoint (p4est_t * p4est, p4est_topidx_t which_tree,
                     p4est_quadrant_t * q, double xyz[3])
 {
-  p4est_qcoord_t      half_length = P8EST_QUADRANT_LEN (q->level) / 2;
+  p4est_qcoord_t      half_length = P4EST_QUADRANT_LEN (q->level) / 2;
 
   p4est_qcoord_to_vertex (p4est->connectivity, which_tree,
                           q->x + half_length, q->y + half_length,
