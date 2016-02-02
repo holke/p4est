@@ -86,7 +86,7 @@ bunny_get_midpoint (p4est_t * p4est, p4est_topidx_t which_tree,
                           q->z + half_length, xyz);
 }
 
-/* Refine if we lie in a cylinder defined by a bounding box */
+/* Refine if we lie in a cone defined by a bounding box */
 static int
 bunny_refine (p4est_t * p4est, p4est_topidx_t which_tree,
               p4est_quadrant_t * quadrant)
