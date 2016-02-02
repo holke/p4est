@@ -33,6 +33,26 @@
 #include <sc_statistics.h>
 #include <sc_options.h>
 
+typedef enum exchange_timers
+{
+  EXCHANGE_ZERO = 0,
+  EXCHANGE_READTETS = EXCHANGE_ZERO,
+  EXCHANGE_HANDED,
+  EXCHANGE_FROMTETS,
+  EXCHANGE_COMPLETE,
+  EXCHANGE_BCAST,
+  EXCHANGE_P4EST,
+  EXCHANGE_REFINE,
+  EXCHANGE_GHOST,
+  EXCHANGE_TIMERS
+}
+exchange_timers_t;
+
+static const char  *timer_names[EXCHANGE_TIMERS] = {
+  "Readtets", "Handed", "Fromtets", "Complete",
+  "Bcast", "P4est", "Refine", "Ghost"
+};
+
 typedef struct
 {
   double              xm, xM, ym, yM, zm, zM;
@@ -93,13 +113,14 @@ main (int argc, char **argv)
   int                 mpiret;
   int                 mpirank;
   int                 irun, runs;
-  double              time_read, time_handed, time_newtets, time_complete;
   p4est_connectivity_t *connectivity;
   p4est_t            *p8est;
   sc_MPI_Comm         mpicomm;
   box_t               Box_ex1;
   sc_flopinfo_t       fi, snapshot;
-  sc_statinfo_t       stats[7];
+  double              snaptime[EXCHANGE_TIMERS];
+  sc_statinfo_t       stats[EXCHANGE_TIMERS];
+  int                 extim;
 #ifdef P4_TO_P8
   const char         *argbasename;
   p4est_topidx_t      tnum_flips;
@@ -149,10 +170,11 @@ main (int argc, char **argv)
     Box_ex1.yM = 7;
     Box_ex1.zM = 7;
 
-    time_read = time_handed = time_newtets = time_complete = 0.;
-
+    /* prepare timers */
+    for (extim = EXCHANGE_ZERO; extim < EXCHANGE_TIMERS; ++extim) {
+      snaptime[extim] = 0.;
+    }
     sc_flops_start (&fi);
-    sc_flops_snap (&fi, &snapshot);
 
     connectivity = NULL;
 #ifndef P4_TO_P8
@@ -167,89 +189,86 @@ main (int argc, char **argv)
     }
     else {
       P4EST_ASSERT (irun == 1);
-
       /* so only here we read a mesh file and only on one processor. */
 
+      /* read tetgen nodes and tetrahedra from files */
+      sc_flops_snap (&fi, &snapshot);
       if (mpirank == 0) {
-        /* read tetgen nodes and tetrahedra from files */
         P4EST_ASSERT (argbasename != NULL);
         ptg = p8est_tets_read (argbasename);
         SC_CHECK_ABORTF (ptg != NULL, "Failed to read tetgen %s",
                          argbasename);
-      }
-      sc_flops_shot (&fi, &snapshot);
-      time_read = snapshot.iwtime;
-      sc_flops_snap (&fi, &snapshot);
 
-      if (mpirank == 0) {
         P4EST_GLOBAL_STATISTICSF ("Read %d nodes and %d tets %s attributes\n",
                                   (int) ptg->nodes->elem_count / 3,
                                   (int) ptg->tets->elem_count / 4,
                                   ptg->tet_attributes !=
                                   NULL ? "with" : "without");
+      }
+      sc_flops_shot (&fi, &snapshot);
+      snaptime[EXCHANGE_READTETS] = snapshot.iwtime;
 
-        /* flip orientation to right-handed */
+      /* flip orientation to right-handed */
+      sc_flops_snap (&fi, &snapshot);
+      if (mpirank == 0) {
         tnum_flips = p8est_tets_make_righthanded (ptg);
         P4EST_GLOBAL_STATISTICSF ("Performed %ld orientation flip(s)\n",
                                   (long) tnum_flips);
       }
       sc_flops_shot (&fi, &snapshot);
-      time_handed = snapshot.iwtime;
-      sc_flops_snap (&fi, &snapshot);
+      snaptime[EXCHANGE_HANDED] = snapshot.iwtime;
 
+      /* create a connectivity from the tet mesh */
+      sc_flops_snap (&fi, &snapshot);
       if (mpirank == 0) {
-        /* create a connectivity from the tet mesh */
         connectivity = p8est_connectivity_new_tets (ptg);
       }
       sc_flops_shot (&fi, &snapshot);
-      time_newtets = snapshot.iwtime;
-      sc_flops_snap (&fi, &snapshot);
+      snaptime[EXCHANGE_FROMTETS] = snapshot.iwtime;
 
+      /* complete connectivity information that is missing in file */
+      sc_flops_snap (&fi, &snapshot);
       if (mpirank == 0) {
-        /* complete connectivity information that is missing in file */
         p8est_connectivity_complete (connectivity);
 
-        P4EST_GLOBAL_LDEBUGF ("Connectivity has %ld edges and %ld corners\n",
-                              (long) connectivity->num_edges,
-                              (long) connectivity->num_corners);
+        P4EST_GLOBAL_STATISTICSF
+          ("Connectivity has %ld edges and %ld corners\n",
+           (long) connectivity->num_edges, (long) connectivity->num_corners);
       }
       sc_flops_shot (&fi, &snapshot);
-      time_complete = snapshot.iwtime;
-      sc_flops_snap (&fi, &snapshot);
+      snaptime[EXCHANGE_COMPLETE] = snapshot.iwtime;
 
       /* TODO: save connectivity to p4est binary format */
-      /*
-         if (mpirank == 0) {
-         snprintf (afilename, BUFSIZ, "%s", "read_tetgen.p8c");
-         retval = p8est_connectivity_save (afilename, connectivity);
-         SC_CHECK_ABORT (retval == 0, "Failed connectivity_save");
-         }
-       */
+#if 0
+      if (mpirank == 0) {
+        snprintf (afilename, BUFSIZ, "%s", "read_tetgen.p8c");
+        retval = p8est_connectivity_save (afilename, connectivity);
+        SC_CHECK_ABORT (retval == 0, "Failed connectivity_save");
+      }
+#endif /* 0 */
     }
-#endif
+#endif /* P4_TO_P8 */
     P4EST_ASSERT ((mpirank == 0) == (connectivity != NULL));
 
     /* this code is the same for all examples */
-    connectivity = p4est_connectivity_bcast (connectivity, 0, mpicomm);
-    sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[2], snapshot.iwtime, "Bcast");
     sc_flops_snap (&fi, &snapshot);
-
+    connectivity = p4est_connectivity_bcast (connectivity, 0, mpicomm);
     P4EST_GLOBAL_LDEBUGF ("Created and broadcasted %s\n", "conn");
+    sc_flops_shot (&fi, &snapshot);
+    snaptime[EXCHANGE_BCAST] = snapshot.iwtime;
 
-    /* create a forest and visualize */
-
+    /* create a forest */
+    sc_flops_snap (&fi, &snapshot);
     p8est = p4est_new_ext (mpicomm, connectivity, 0, 4, 1, 0, NULL, &Box_ex1);
     sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[4], snapshot.iwtime, P4EST_STRING "_new");
-    sc_flops_snap (&fi, &snapshot);
+    snaptime[EXCHANGE_P4EST] = snapshot.iwtime;
 
+    sc_flops_snap (&fi, &snapshot);
 #ifdef P4_TO_P8
     p4est_refine (p8est, 0, bunny_refine, NULL);
 #endif
     sc_flops_shot (&fi, &snapshot);
-    sc_stats_set1 (&stats[5], snapshot.iwtime, "Refine 1 times");
-    sc_flops_snap (&fi, &snapshot);
+    snaptime[EXCHANGE_REFINE] = snapshot.iwtime;
 
     /* clean up */
     p4est_destroy (p8est);
@@ -261,13 +280,12 @@ main (int argc, char **argv)
     }
 #endif
 
-    sc_stats_set1 (&stats[0], time_read, "Read");
-    sc_stats_set1 (&stats[1], time_handed, "Right handed");
-    sc_stats_set1 (&stats[3], time_complete, "Connectivity complete");
-    sc_stats_set1 (&stats[6], time_newtets, "New connectivity from tets");
-
-    sc_stats_compute (mpicomm, 7, stats);
-    sc_stats_print (p4est_package_id, SC_LP_STATISTICS, 7, stats, 1, 1);
+    for (extim = EXCHANGE_ZERO; extim < EXCHANGE_TIMERS; ++extim) {
+      sc_stats_set1 (&stats[extim], snaptime[extim], timer_names[extim]);
+    }
+    sc_stats_compute (mpicomm, EXCHANGE_TIMERS, stats);
+    sc_stats_print (p4est_package_id, SC_LP_STATISTICS, EXCHANGE_TIMERS,
+                    stats, 1, 1);
   }
 
   sc_finalize ();
