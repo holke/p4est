@@ -54,6 +54,46 @@ bunny_get_midpoint (p8est_t * p8est, p4est_topidx_t which_tree,
                           xyz);
 }
 
+static const p4est_locidx_t encode = 0xdead13af;
+
+static void
+fill_ghost_data (p8est_t * p8est, p8est_ghost_t * ghost)
+{
+#ifdef P4EST_ENABLE_DEBUG
+  size_t              data_size;
+#endif
+  size_t              zz;
+  p4est_topidx_t      tree_id;
+  p4est_locidx_t      local_id, intree_pos;
+  p8est_quadrant_t   *mirror, *quadrant;
+  p8est_tree_t       *tree;
+
+#ifdef P4EST_ENABLE_DEBUG
+  data_size = p8est->data_size;
+  P4EST_ASSERT (data_size == sizeof (p4est_locidx_t));
+#endif
+
+  for (zz = 0; zz < ghost->mirrors.elem_count; ++zz) {
+    /* get tree and local quadrant number from mirror data */
+    mirror = p8est_quadrant_array_index (&ghost->mirrors, zz);
+    tree_id = mirror->p.piggy3.which_tree;
+    P4EST_ASSERT (p8est->first_local_tree <= tree_id &&
+                  tree_id <= p8est->last_local_tree);
+    local_id = mirror->p.piggy3.local_num;
+    P4EST_ASSERT (0 <= local_id && local_id < p8est->local_num_quadrants);
+
+    /* figure out the real existing quadrant pointed at by the mirror */
+    tree = p8est_tree_array_index (p8est->trees, tree_id);
+    P4EST_ASSERT (tree->quadrants_offset <= local_id);
+    intree_pos = local_id - tree->quadrants_offset;
+    P4EST_ASSERT (intree_pos < (p4est_locidx_t) tree->quadrants.elem_count);
+    quadrant = p8est_quadrant_array_index (&tree->quadrants, intree_pos);
+
+    /* assign this number into the data field and encode it */
+    *(p4est_locidx_t *) quadrant->p.user_data = local_id ^ encode;
+  }
+}
+
 /* Refine if we lie in a cylinder defined by a bounding box */
 static int
 bunny_refine (p8est_t * p8est, p4est_topidx_t which_tree,
@@ -76,6 +116,38 @@ bunny_refine (p8est_t * p8est, p4est_topidx_t which_tree,
     else return 0;
 }
 
+static void
+verify_ghost_data (p8est_t * p8est, p8est_ghost_t * ghost,
+                   p4est_locidx_t * received)
+{
+#ifdef P4EST_ENABLE_DEBUG
+  size_t              data_size;
+#endif
+  size_t              zz;
+#if 0
+  p4est_topidx_t      tree_id;
+#endif
+  p4est_locidx_t      remote_id;
+  p8est_quadrant_t   *remote;
+
+#ifdef P4EST_ENABLE_DEBUG
+  data_size = p8est->data_size;
+  P4EST_ASSERT (data_size == sizeof (p4est_locidx_t));
+#endif
+
+  for (zz = 0; zz < ghost->ghosts.elem_count; ++zz) {
+    /* get tree and remote quadrant number from ghost data */
+    remote = p8est_quadrant_array_index (&ghost->ghosts, zz);
+#if 0
+    tree_id = remote->p.piggy3.which_tree;
+    P4EST_ASSERT (0 <= tree_id && tree_id < p4est->connectivity->num_trees);
+#endif
+    remote_id = remote->p.piggy3.local_num ^ encode;
+
+    SC_CHECK_ABORT (remote_id == received[zz], "Ghost data mismatch");
+  }
+}
+
 int
 main (int argc, char **argv)
 {
@@ -90,8 +162,14 @@ main (int argc, char **argv)
   sc_MPI_Comm         mpicomm;
   box_t               Box_ex1, Box_bunny;
   sc_flopinfo_t       fi, snapshot;
-  sc_statinfo_t       stats[7];
+  sc_statinfo_t       stats[11];
+  p8est_ghost_t      *ghost;
+  p4est_locidx_t     *received;
   const int           level = 0;
+
+#ifdef P4EST_ENABLE_DEBUG
+  size_t              data_size;
+#endif
 
   mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
@@ -187,8 +265,9 @@ main (int argc, char **argv)
 
   sc_flops_snap (&fi, &snapshot);
 
+  data_size = sizeof (p4est_locidx_t);
   p8est = p8est_new_ext (mpicomm, connectivity, 0, level, 1,
-                         0, NULL, &Box_bunny);
+                         data_size, NULL, &Box_ex1);
 
   sc_flops_shot (&fi, &snapshot);
   sc_stats_set1 (&stats[4], snapshot.iwtime, "P8est New level 4");
@@ -206,6 +285,38 @@ main (int argc, char **argv)
   sc_stats_set1 (&stats[6], snapshot.iwtime, "Partition");
 
 
+  /* create a ghost layer */
+  sc_flops_snap (&fi, &snapshot);
+  ghost = p8est_ghost_new (p8est, P8EST_CONNECT_FULL);
+  sc_flops_shot (&fi, &snapshot);
+   sc_stats_set1 (&stats[7], snapshot.iwtime, "Create Ghost");
+
+
+  /* fill data to prepare ghost exchange */
+  sc_flops_snap (&fi, &snapshot);
+  received = P4EST_ALLOC (p4est_locidx_t, ghost->ghosts.elem_count);
+  fill_ghost_data (p8est, ghost);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[8], snapshot.iwtime, "Fill data for ghost exchange");
+
+
+  /* execute ghost exchange */
+  sc_flops_snap (&fi, &snapshot);
+  p8est_ghost_exchange_data (p8est, ghost, received);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[9], snapshot.iwtime, "Ghost exchange");
+
+
+  /* verify data after ghost exchange */
+  sc_flops_snap (&fi, &snapshot);
+  verify_ghost_data (p8est, ghost, received);
+  sc_flops_shot (&fi, &snapshot);
+  sc_stats_set1 (&stats[10], snapshot.iwtime, "Verify data");
+
+  /* clean up */
+  P4EST_FREE (received);
+  p8est_ghost_destroy (ghost);
+
 
 /*
   snprintf (afilename, BUFSIZ, "%s", "read_tetgen");
@@ -220,8 +331,8 @@ main (int argc, char **argv)
     p8est_tets_destroy (ptg);
   }
 
-  sc_stats_compute (sc_MPI_COMM_WORLD, 7, stats);
-  sc_stats_print (p4est_package_id, SC_LP_STATISTICS, 7, stats, 1, 1);
+  sc_stats_compute (sc_MPI_COMM_WORLD, 11, stats);
+  sc_stats_print (p4est_package_id, SC_LP_STATISTICS, 11, stats, 1, 1);
 
   sc_finalize ();
   mpiret = sc_MPI_Finalize ();
