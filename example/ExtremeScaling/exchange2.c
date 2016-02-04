@@ -243,7 +243,7 @@ main (int argc, char **argv)
 #ifndef P4_TO_P8
   runs = 1;
 #else
-  runs = 2;
+  runs = 1;
 #endif
 
   for (irun = 0; irun < runs; ++irun) {
