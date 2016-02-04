@@ -26,7 +26,6 @@
 #include <p4est_ghost.h>
 #else
 #include <p8est_extended.h>
-#include <p8est_geometry.h>
 #include <p8est_ghost.h>
 #include <p8est_tets_hexes.h>
 #endif
@@ -254,7 +253,7 @@ main (int argc, char **argv)
     tnum_flips = 0;
     if (irun == 1) {
       if (argbasename == NULL) {
-        SC_GLOBAL_LERRORF ("Usage: %s <tetgen file base name>\n", argv[0]);
+        SC_GLOBAL_LERRORF ("Usage: %s -f <tetgen file base name> [-l level]\n", argv[0]);
         sc_abort ();
       }
     }
