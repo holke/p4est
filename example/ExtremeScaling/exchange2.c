@@ -37,11 +37,7 @@
 typedef enum exchange_timers
 {
   EXCHANGE_ZERO = 0,
-  EXCHANGE_READTETS = EXCHANGE_ZERO,
-  EXCHANGE_HANDED,
-  EXCHANGE_FROMTETS,
-  EXCHANGE_COMPLETE,
-  EXCHANGE_BCAST,
+  EXCHANGE_BCAST = EXCHANGE_ZERO,
   EXCHANGE_P4EST,
   EXCHANGE_REFINE,
   EXCHANGE_PARTITION,
@@ -54,7 +50,6 @@ typedef enum exchange_timers
 exchange_timers_t;
 
 static const char  *timer_names[EXCHANGE_TIMERS] = {
-  "Readtets", "Handed", "Fromtets", "Complete",
   "Bcast", "P4est", "Refine", "Partition",
   "Ghost", "Fill", "Exchange", "Verify"
 };
@@ -190,7 +185,6 @@ main (int argc, char **argv)
 #endif
   int                 mpiret;
   int                 mpirank;
-  int                 irun, runs;
   int                 extim;
   size_t              data_size;
   double              snaptime[EXCHANGE_TIMERS];
@@ -201,11 +195,6 @@ main (int argc, char **argv)
   p4est_connectivity_t *connectivity;
   p4est_t            *p4est;
   p4est_ghost_t      *ghost;
-#ifdef P4_TO_P8
-  const char         *argbasename;
-  p4est_topidx_t      tnum_flips;
-  p8est_tets_t       *ptg;
-#endif
   box_t               Box_ex1;
   sc_options_t       *opt;
   int                 level, parsed;
@@ -224,10 +213,6 @@ main (int argc, char **argv)
   opt = sc_options_new (argv[0]);
   sc_options_add_int (opt, 'l',"level", &level, 0,
                       "Initial refinement level");
-#ifdef P4_TO_P8
-  sc_options_add_string (opt, 'f',"fileprefix",&argbasename, NULL,
-                         "Prefix for tetgen files");
-#endif
 
   parsed =
       sc_options_parse (p4est_package_id, SC_LP_ERROR, opt, argc, argv);
@@ -240,24 +225,8 @@ main (int argc, char **argv)
   mpiret = sc_MPI_Comm_rank (mpicomm, &mpirank);
   SC_CHECK_MPI (mpiret);
 
-#ifndef P4_TO_P8
-  runs = 1;
-#else
-  runs = 1;
-#endif
 
-  for (irun = 0; irun < runs; ++irun) {
-    P4EST_GLOBAL_ESSENTIALF ("Run %s exchange %d\n", P4EST_STRING, irun);
-#ifdef P4_TO_P8
-    ptg = NULL;
-    tnum_flips = 0;
-    if (irun == 1) {
-      if (argbasename == NULL) {
-        SC_GLOBAL_LERRORF ("Usage: %s -f <tetgen file base name> [-l level]\n", argv[0]);
-        sc_abort ();
-      }
-    }
-#endif
+    P4EST_GLOBAL_ESSENTIALF ("Run %s exchange\n", P4EST_STRING);
 
     data_size = sizeof (p4est_locidx_t);
 
@@ -280,72 +249,10 @@ main (int argc, char **argv)
       connectivity = p4est_connectivity_new_moebius ();
     }
 #else
-    if (irun == 0) {
-      if (mpirank == 0) {
-        connectivity = p8est_connectivity_new_rotcubes ();
-      }
+    if (mpirank == 0) {
+      connectivity = p8est_connectivity_new_rotcubes ();
     }
-    else {
-      P4EST_ASSERT (irun == 1);
-      /* so only here we read a mesh file and only on one processor. */
-
-      /* read tetgen nodes and tetrahedra from files */
-      sc_flops_snap (&fi, &snapshot);
-      if (mpirank == 0) {
-        P4EST_ASSERT (argbasename != NULL);
-        ptg = p8est_tets_read (argbasename);
-        SC_CHECK_ABORTF (ptg != NULL, "Failed to read tetgen %s",
-                         argbasename);
-
-        P4EST_GLOBAL_STATISTICSF ("Read %d nodes and %d tets %s attributes\n",
-                                  (int) ptg->nodes->elem_count / 3,
-                                  (int) ptg->tets->elem_count / 4,
-                                  ptg->tet_attributes !=
-                                  NULL ? "with" : "without");
-      }
-      sc_flops_shot (&fi, &snapshot);
-      snaptime[EXCHANGE_READTETS] = snapshot.iwtime;
-
-      /* flip orientation to right-handed */
-      sc_flops_snap (&fi, &snapshot);
-      if (mpirank == 0) {
-        tnum_flips = p8est_tets_make_righthanded (ptg);
-        P4EST_GLOBAL_STATISTICSF ("Performed %ld orientation flip(s)\n",
-                                  (long) tnum_flips);
-      }
-      sc_flops_shot (&fi, &snapshot);
-      snaptime[EXCHANGE_HANDED] = snapshot.iwtime;
-
-      /* create a connectivity from the tet mesh */
-      sc_flops_snap (&fi, &snapshot);
-      if (mpirank == 0) {
-        connectivity = p8est_connectivity_new_tets (ptg);
-      }
-      sc_flops_shot (&fi, &snapshot);
-      snaptime[EXCHANGE_FROMTETS] = snapshot.iwtime;
-
-      /* complete connectivity information that is missing in file */
-      sc_flops_snap (&fi, &snapshot);
-      if (mpirank == 0) {
-        p8est_connectivity_complete (connectivity);
-
-        P4EST_GLOBAL_STATISTICSF
-          ("Connectivity has %ld edges and %ld corners\n",
-           (long) connectivity->num_edges, (long) connectivity->num_corners);
-      }
-      sc_flops_shot (&fi, &snapshot);
-      snaptime[EXCHANGE_COMPLETE] = snapshot.iwtime;
-
-      /* TODO: save connectivity to p4est binary format */
-#if 0
-      if (mpirank == 0) {
-        snprintf (afilename, BUFSIZ, "%s", "read_tetgen.p8c");
-        retval = p8est_connectivity_save (afilename, connectivity);
-        SC_CHECK_ABORT (retval == 0, "Failed connectivity_save");
-      }
-#endif /* 0 */
-    }
-#endif /* P4_TO_P8 */
+#endif
     P4EST_ASSERT ((mpirank == 0) == (connectivity != NULL));
 
     /* this code is the same for all examples */
@@ -407,21 +314,12 @@ main (int argc, char **argv)
     p4est_destroy (p4est);
     p4est_connectivity_destroy (connectivity);
 
-#ifdef P4_TO_P8
-    if (irun == 1) {
-      if (mpirank == 0) {
-        p8est_tets_destroy (ptg);
-      }
-    }
-#endif
-
     for (extim = EXCHANGE_ZERO; extim < EXCHANGE_TIMERS; ++extim) {
       sc_stats_set1 (&stats[extim], snaptime[extim], timer_names[extim]);
     }
     sc_stats_compute (mpicomm, EXCHANGE_TIMERS, stats);
     sc_stats_print (p4est_package_id, SC_LP_STATISTICS, EXCHANGE_TIMERS,
                     stats, 1, 1);
-  }
 
   sc_options_destroy (opt);
   sc_finalize ();

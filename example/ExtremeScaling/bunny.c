@@ -167,9 +167,7 @@ main (int argc, char **argv)
   p4est_locidx_t     *received;
   const int           level = 0;
 
-#ifdef P4EST_ENABLE_DEBUG
   size_t              data_size;
-#endif
 
   mpiret = sc_MPI_Init (&argc, &argv);
   SC_CHECK_MPI (mpiret);
