@@ -8,7 +8,6 @@
 #@notify_user = holke@ins.uni-bonn.de
 #@wall_clock_limit = 00:40:00
 #@bg_size  = 28672
-#@ll_res_id = juqueens1c1.1471.r
 #@queue
 
 bg_size=28672
