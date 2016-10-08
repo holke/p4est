@@ -1760,7 +1760,7 @@ p4est_quadrant_set_morton (p4est_quadrant_t * quadrant,
 
   P4EST_ASSERT (0 <= level && level <= P4EST_QMAXLEVEL);
   if (level < P4EST_QMAXLEVEL) {
-    P4EST_ASSERT (id < ((uint64_t) 1 << P4EST_DIM * (level + 2)));
+    P4EST_ASSERT (id < ((uint64_t) 1) << P4EST_DIM * (level + 2));
   }
 
   quadrant->level = (int8_t) level;
